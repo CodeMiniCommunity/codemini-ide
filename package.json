@@ -1,0 +1,27 @@
+{
+  "name": "codemini-ide",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Offline-first, installable, lightweight IDE that runs entirely in the browser.",
+  "license": "MIT",
+  "author": "Christian Forson <codercriss@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CodeMiniCommunity/codemini-ide.git"
+  },
+  "bugs": {
+    "url": "https://github.com/CodeMiniCommunity/codemini-ide/issues"
+  },
+  "homepage": "https://the-code-mini-ide.vercel.app/",
+  "scripts": {
+    "start": "npx --yes serve . -l 3000",
+    "test": "node tests/policy.test.js && node tests/app-info.test.js",
+    "test:e2e": "node tests/e2e/run.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "playwright": "^1.56.0"
+  }
+}
