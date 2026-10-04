@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm test
+      - name: Check that every precached asset exists
+        run: |
+          missing=0
+          for p in $(grep -oE "^\s*'/[^']+'" sw.js | tr -d " '" | grep -vE '^/$'); do
+            [ -e ".${p}" ] || { echo "Missing precache entry: ${p}"; missing=1; }
+          done
+          exit $missing
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
