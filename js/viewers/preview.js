@@ -33,16 +33,27 @@
         @media (max-width: 768px) {
             #livePreviewContainer { width: 100%; border-left: none; }
             #lpMaximizeBtn, #lpWordCount, #lpDockBtn { display: none !important; }
-            /* On narrow viewports there's no room for a side panel without hiding the page entirely
-               (and hover doesn't exist on touch anyway) -- use a bottom sheet instead so the element
-               that was just tapped stays visible above the panel for picking a different one. */
-            .lp-inspector-panel { top: auto; left: 0; right: 0; bottom: 0; width: 100%; max-width: 100%; height: 50%; border-left: none; border-top: 1px solid var(--border-color); }
+            /* Phones get a taller default for the bottom inspector panel (it pushes the page up, like the console). */
+            .lp-inspector-panel { height: 50%; }
             .insp-toolbar { gap: 16px; }
             .insp-style-prop { min-width: 100px; }
-            .lp-inspector-vresizer { display: flex; }
+        }
+        /* Console, Network and the DOM Inspector are all in-flow bottom panels that push the preview up
+           (only one is open at a time - see setActivePanel). The one exception: on a desktop-width screen with
+           the preview maximized, the inspector becomes a right sidebar that pushes the preview left instead. */
+        @media (min-width: 769px) {
+            #livePreviewContainer.maximized .lp-content-wrapper.insp-open { flex-direction: row; }
+            #livePreviewContainer.maximized .lp-content-wrapper.insp-open .lp-content { min-width: 0; }
+            #livePreviewContainer.maximized .lp-content-wrapper.insp-open .lp-inspector-panel {
+                width: 360px; max-width: 50%; height: auto !important; min-height: 0; max-height: none;
+                border-top: none; border-left: 1px solid var(--border-color);
+            }
+            #livePreviewContainer.maximized .lp-content-wrapper.insp-open .lp-inspector-vresizer { display: none; }
+            #livePreviewContainer.maximized .lp-content-wrapper.insp-open #lpConsolePanel,
+            #livePreviewContainer.maximized .lp-content-wrapper.insp-open #lpNetworkPanel { display: none; }
         }
         .lp-inspector-vresizer {
-            display: none;
+            display: flex;
             align-items: center;
             justify-content: center;
             flex-shrink: 0;
@@ -135,9 +146,9 @@
         .sm-idb-record-key { color: var(--term-yellow); font-size: 10px; margin-bottom: 2px; }
         .sm-idb-record pre { margin: 0; white-space: pre-wrap; word-break: break-all; font-size: 11px; max-height: 150px; overflow-y: auto; }
         .lp-content-wrapper { flex: 1; display: flex; flex-direction: column; overflow: hidden; background-color: var(--border-color); position: relative; }
-        .lp-content { flex: 1; display: flex; justify-content: center; align-items: center; position: relative; overflow: hidden; }
+        .lp-content { flex: 1; min-height: 60px; display: flex; justify-content: center; align-items: center; position: relative; overflow: hidden; }
         .lp-content iframe { width: 100%; height: 100%; border: none; outline: none; background-color: #ffffff; transition: width 0.3s ease, height 0.3s ease; }
-        .lp-inspector-panel { position: absolute; top: 0; right: 0; bottom: 0; width: 320px; max-width: 85%; background-color: var(--bg-white); color: var(--text-main); font-family: var(--font-mono); font-size: 12px; display: none; flex-direction: column; z-index: 10003; border-left: 1px solid var(--border-color); box-shadow: -6px 0 15px rgba(0,0,0,0.08); }
+        .lp-inspector-panel { position: relative; flex: 0 0 auto; box-sizing: border-box; width: 100%; height: 40%; min-height: 120px; max-height: 85%; background-color: var(--bg-white); color: var(--text-main); font-family: var(--font-mono); font-size: 12px; display: none; flex-direction: column; z-index: 10003; border-top: 1px solid var(--border-color); overflow: hidden; }
         .lp-inspector-panel.show { display: flex; }
         .insp-breadcrumb { display: flex; align-items: center; gap: 2px; padding: 6px 8px; border-bottom: 1px solid var(--border-color); overflow-x: auto; white-space: nowrap; flex-shrink: 0; -webkit-overflow-scrolling: touch; }
         .insp-breadcrumb::-webkit-scrollbar { height: 3px; }
@@ -189,7 +200,7 @@
         .lp-status-left i:hover, .lp-status-right i:hover { color: var(--text-main); }
         .lp-status-left i.disabled { opacity: 0.3; cursor: not-allowed; pointer-events: none; }
         .active-state { color: var(--accent-blue) !important; }
-        #lpNetworkPanel { position: absolute; left: 0; right: 0; height: 40%; bottom: 0px; background-color: var(--bg-white); border-top: 1px solid var(--border-color); display: none; flex-direction: column; z-index: 10001; box-shadow: 0 -5px 15px rgba(0,0,0,0.05); }
+        #lpNetworkPanel { position: relative; flex: 0 0 auto; box-sizing: border-box; height: 40%; min-height: 0; overflow: hidden; background-color: var(--bg-white); border-top: 1px solid var(--border-color); display: none; flex-direction: column; z-index: 10001; }
         #lpNetworkPanel.show { display: flex; }
         .network-header { display: flex; justify-content: space-between; align-items: center; padding: 6px 15px; background: var(--bg-white); font-weight: 500; font-size: 12px; color: var(--text-main); flex-shrink: 0; gap: 10px; flex-wrap: wrap; }
         .network-header i { font-size: 14px; cursor: pointer; color: var(--icon-gray); }
@@ -204,7 +215,7 @@
         .net-search-wrap { position: relative; flex: 1; min-width: 100px; }
         .net-search-wrap i { position: absolute; left: 7px; top: 50%; transform: translateY(-50%); font-size: 12px; color: var(--text-muted); cursor: default; }
         .net-search { width: 100%; box-sizing: border-box; padding: 4px 8px 4px 24px; font-size: 11px; border: 1px solid var(--border-color); border-radius: 5px; background: var(--bg-white); color: var(--text-main); font-family: var(--font-mono); }
-        .network-body { flex: 1; overflow-y: auto; padding: 5px; font-family: var(--font-mono); font-size: 11px; -webkit-overflow-scrolling: touch; }
+        .network-body { flex: 1; min-height: 0; overflow-y: auto; padding: 5px; font-family: var(--font-mono); font-size: 11px; -webkit-overflow-scrolling: touch; }
         .net-req { display: flex; flex-direction: column; border-bottom: 1px solid var(--border-color); }
         .net-req-row { display: flex; align-items: center; padding: 5px 8px; gap: 8px; color: var(--text-main); cursor: pointer; }
         .net-req-row:hover { background-color: var(--hover-blue); }
@@ -520,7 +531,7 @@
                 isMaximized: parsed.isMaximized || false,
                 isDocked: parsed.isDocked || false,
                 dockWidth: parsed.dockWidth || 45, // vw percent
-                inspectorMobileHeight: parsed.inspectorMobileHeight || null, // px, mobile bottom-sheet height
+                inspectorMobileHeight: parsed.inspectorMobileHeight || null, // px, bottom inspector panel height (key kept from when it was mobile-only, so saved sizes survive)
                 autoReloadEnabled: parsed.autoReloadEnabled !== undefined ? parsed.autoReloadEnabled : true,
                 autoScrollConsole: parsed.autoScrollConsole !== undefined ? parsed.autoScrollConsole : true,
                 inspectorEnabled: false,
@@ -645,6 +656,7 @@
                 if(btn) btn.classList.remove('active-state');
             });
             if(lpInspectorPanel) lpInspectorPanel.classList.remove('show');
+            syncPanelLayout();
             if(lpStoragePanel) lpStoragePanel.classList.remove('show');
             if(lpStorageManagerBtn) lpStorageManagerBtn.classList.remove('active-state');
             // Settings panel is the same shared-singleton dropdown as
@@ -2371,6 +2383,7 @@ $_SERVER['REMOTE_ADDR'] = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
             lpConsolePanel.classList.remove('show');
             lpNetworkPanel.classList.remove('show');
             lpInspectorPanel.classList.remove('show');
+            syncPanelLayout();
             state.inspectorEnabled = false;
             state.inspectorLocked = false;
             state.inspectorData = null;
@@ -2782,7 +2795,67 @@ $_SERVER['REMOTE_ADDR'] = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
         });
     }
 
-    // Mobile bottom-sheet inspector panel height, dragged via the handle at its top edge.
+    // ---- Bottom tool panels: Console / Network / DOM Inspector ----------------------------------------
+    // All three live in the content column below the preview and push it up when open, and only one can be
+    // open at a time: opening one closes the others. (Maximized on a desktop-width screen, the inspector
+    // becomes a right sidebar instead - pure CSS, driven by the 'insp-open' class set in syncPanelLayout.)
+    const lpContentWrapper = lpInspectorPanel ? lpInspectorPanel.parentElement : null;
+
+    // Derives every panel-related class from the panels' real 'show' state, so it can be called after
+    // anything that opens or closes a panel (including the reset paths that remove 'show' directly).
+    function syncPanelLayout() {
+        const consoleOpen = lpConsolePanel.classList.contains('show');
+        const networkOpen = lpNetworkPanel.classList.contains('show');
+        const inspectorOpen = lpInspectorPanel.classList.contains('show');
+        if (lpContentWrapper) lpContentWrapper.classList.toggle('insp-open', inspectorOpen);
+        lpToggleConsole.classList.toggle('active-state', consoleOpen);
+        lpNetworkBtn.classList.toggle('active-state', networkOpen);
+        lpInspectorBtn.classList.toggle('active-state', inspectorOpen);
+    }
+
+    function isPanelOpen(name) {
+        if (name === 'console') return lpConsolePanel.classList.contains('show');
+        if (name === 'network') return lpNetworkPanel.classList.contains('show');
+        if (name === 'inspector') return getPreviewState().inspectorEnabled;
+        return false;
+    }
+
+    // name: 'console' | 'network' | 'inspector' | null (close everything)
+    function setActivePanel(name) {
+        const state = getPreviewState();
+        const iframe = document.getElementById('lpIframe');
+        const post = (enabled) => { if (iframe && iframe.contentWindow) iframe.contentWindow.postMessage({ type: 'toggle-inspector', enabled }, '*'); };
+
+        lpConsolePanel.classList.toggle('show', name === 'console');
+        lpNetworkPanel.classList.toggle('show', name === 'network');
+
+        const wantInspector = name === 'inspector';
+        const wasInspector = state.inspectorEnabled;
+        state.inspectorEnabled = wantInspector;
+        lpInspectorPanel.classList.toggle('show', wantInspector);
+        if (wantInspector && !wasInspector) {
+            if (state.inspectorMobileHeight) lpInspectorPanel.style.height = `${state.inspectorMobileHeight}px`;
+            state.inspectorLocked = false;
+            state.inspectorData = null;
+            renderInspectorPanel(state);
+            post(true);
+        } else if (!wantInspector && wasInspector) {
+            state.inspectorLocked = false;
+            state.inspectorData = null;
+            post(false);
+        }
+
+        if (name === 'network') renderNetworkPanel(state);
+        if (name === 'console') {
+            lpConsoleInput.focus();
+            if (state.autoScrollConsole) lpConsoleContent.parentElement.scrollTop = lpConsoleContent.parentElement.scrollHeight;
+        }
+        syncPanelLayout();
+    }
+
+    function togglePanel(name) { setActivePanel(isPanelOpen(name) ? null : name); }
+
+    // Bottom inspector panel height, dragged via the handle at its top edge (hidden in the sidebar layout).
     const lpInspectorVResizer = document.getElementById('lpInspectorVResizer');
     if (lpInspectorVResizer && lpInspectorPanel && window.makeResizable) {
         let startHeight = 0;
@@ -2797,7 +2870,7 @@ $_SERVER['REMOTE_ADDR'] = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
                 // Dragging the handle up (negative dy) should grow the sheet, since it's
                 // anchored to the bottom of the screen - so height increases as dy decreases.
                 let newHeight = startHeight - dy;
-                const maxHeight = window.innerHeight * 0.85;
+                const maxHeight = (lpContentWrapper ? lpContentWrapper.offsetHeight : window.innerHeight) * 0.85;
                 const minHeight = 120;
                 if (newHeight < minHeight) newHeight = minHeight;
                 if (newHeight > maxHeight) newHeight = maxHeight;
@@ -2907,12 +2980,8 @@ $_SERVER['REMOTE_ADDR'] = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
         });
     });
 
-    lpNetworkBtn.addEventListener('click', () => {
-        lpNetworkPanel.classList.toggle('show');
-        lpNetworkBtn.classList.toggle('active-state');
-        if (lpNetworkPanel.classList.contains('show')) renderNetworkPanel(getPreviewState());
-    });
-    lpCloseNetwork.addEventListener('click', () => { lpNetworkPanel.classList.remove('show'); lpNetworkBtn.classList.remove('active-state'); });
+    lpNetworkBtn.addEventListener('click', () => togglePanel('network'));
+    lpCloseNetwork.addEventListener('click', () => { if (isPanelOpen('network')) setActivePanel(null); });
     lpClearNetwork.addEventListener('click', () => {
         const state = getPreviewState();
         state.networkEntries.clear();
@@ -2940,28 +3009,7 @@ $_SERVER['REMOTE_ADDR'] = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
         }
     });
 
-    lpInspectorBtn.addEventListener('click', () => {
-        const state = getPreviewState();
-        state.inspectorEnabled = !state.inspectorEnabled;
-        const iframe = document.getElementById('lpIframe');
-        if (state.inspectorEnabled) {
-            lpInspectorBtn.classList.add('active-state');
-            lpInspectorPanel.classList.add('show');
-            if (window.innerWidth <= 768 && state.inspectorMobileHeight) {
-                lpInspectorPanel.style.height = `${state.inspectorMobileHeight}px`;
-            }
-            state.inspectorLocked = false;
-            state.inspectorData = null;
-            renderInspectorPanel(state);
-            if (iframe && iframe.contentWindow) iframe.contentWindow.postMessage({ type: 'toggle-inspector', enabled: true }, '*');
-        } else {
-            lpInspectorBtn.classList.remove('active-state');
-            lpInspectorPanel.classList.remove('show');
-            state.inspectorLocked = false;
-            state.inspectorData = null;
-            if (iframe && iframe.contentWindow) iframe.contentWindow.postMessage({ type: 'toggle-inspector', enabled: false }, '*');
-        }
-    });
+    lpInspectorBtn.addEventListener('click', () => togglePanel('inspector'));
 
     lpLayoutDebugBtn.addEventListener('click', () => {
         const state = getPreviewState();
@@ -3104,16 +3152,9 @@ $_SERVER['REMOTE_ADDR'] = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
         window.forceClosePreview(winId);
     });
 
-    lpToggleConsole.addEventListener('click', () => {
-        const state = getPreviewState();
-        lpConsolePanel.classList.toggle('show');
-        if (lpConsolePanel.classList.contains('show')) {
-            lpConsoleInput.focus();
-            if (state.autoScrollConsole) lpConsoleContent.parentElement.scrollTop = lpConsoleContent.parentElement.scrollHeight;
-        }
-    });
+    lpToggleConsole.addEventListener('click', () => togglePanel('console'));
 
-    lpCloseConsole.addEventListener('click', () => { lpConsolePanel.classList.remove('show'); });
+    lpCloseConsole.addEventListener('click', () => { if (isPanelOpen('console')) setActivePanel(null); });
     lpClearConsole.addEventListener('click', () => { lpConsoleContent.innerHTML = ''; });
 
     lpConsoleInput.addEventListener('keydown', (e) => {

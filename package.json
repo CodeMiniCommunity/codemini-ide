@@ -1,6 +1,6 @@
 {
   "name": "codemini-ide",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "private": true,
   "description": "Offline-first, installable, lightweight IDE that runs entirely in the browser.",
   "license": "MIT",
@@ -15,8 +15,9 @@
   "homepage": "https://the-code-mini-ide.vercel.app/",
   "scripts": {
     "start": "npx --yes serve . -l 3000",
-    "test": "node tests/policy.test.js && node tests/app-info.test.js",
-    "test:e2e": "node tests/e2e/run.js"
+    "test": "node tests/policy.test.js && node tests/app-info.test.js && node tests/pwa.test.js && node tests/sw.test.js && node tests/update-state.test.js",
+    "test:e2e": "node tests/e2e/run.js",
+    "screenshots": "node tools/capture-screenshots.js"
   },
   "engines": {
     "node": ">=18"

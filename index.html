@@ -48,7 +48,16 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="mobile-web-app-capable" content="yes">
-    <link rel="apple-touch-icon" href="/icons/icon.png">
+    <meta name="application-name" content="CodeMini IDE">
+    <meta name="apple-mobile-web-app-title" content="CodeMini">
+    <meta name="description" content="CodeMini IDE - an offline-first, installable IDE that runs entirely in your browser.">
+    <link rel="icon" href="/icons/favicon.ico" sizes="48x48">
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png">
+    <!-- Service worker registration, update notice and install prompt. Loaded here (not at the end of <body>)
+         so the beforeinstallprompt listener is attached before the browser can fire it. -->
+    <script src="js/core/pwa.js"></script>
 </head>
 
 <body>
@@ -450,17 +459,6 @@
         <input type="text" id="gotoLineInput" placeholder="Line:Column"
             style="width: 100px; font-size:12px; padding:4px 8px; border:1px solid var(--border-color); border-radius:2px; outline:none; background:var(--bg-panel); color:var(--text-main);">
     </div>
-
-    <script>
-        // Register Service Worker silently (No UI indicators)
-    if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-            navigator.serviceWorker.register('/sw.js').catch(err => {
-                console.error('SW Registration failed:', err);
-            });
-        });
-    }
-    </script>
 
     <script src="js/core/app-info.js"></script>
     <script src="js/core/settings-profile.js"></script>

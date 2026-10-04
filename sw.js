@@ -1,6 +1,6 @@
 // Static app-shell cache. Matches the app version (package.json / Settings > About); bump it on every release
 // that changes a precached file so installed copies refresh (old caches are deleted on activate).
-const CACHE_NAME = 'codemini-static-v1.0.0';
+const CACHE_NAME = 'codemini-static-v1.2.0';
 // Deliberately NOT bumped with CACHE_NAME: everything already in here is a valid
 // (non-opaque) CDN response, and bumping would force every user to re-download
 // Pyodide/Monaco for no reason.
@@ -52,8 +52,63 @@ const STATIC_ASSETS = [
     '/js/terminal/terminal-window.js',
     '/js/terminal/console.js',
     '/js/core/preloader.js',
-    '/manifest.json'
+    '/js/core/pwa.js',
+    '/manifest.json',
+    '/icons/icon.png',
+    '/icons/icon-192.png',
+    '/icons/icon-maskable-192.png',
+    '/icons/icon-maskable-512.png',
+    '/icons/apple-touch-icon.png',
+    '/icons/favicon-32.png',
+    '/icons/favicon-16.png',
+    '/icons/favicon.ico'
 ];
+
+// How long a same-origin request may wait for the network before the cached copy is served instead.
+// Without this, a flaky ("lie-fi") connection - connected but barely moving data - hangs the app shell until the
+// browser's own timeout, even though a perfectly good cached copy is sitting right there. The network request
+// keeps going after the timeout, so the cache is still refreshed for next time.
+const NETWORK_TIMEOUT_MS = 4000;
+
+// Network-first for the app's own files, with a timeout and an offline fallback.
+//  - navigations ignore the query string when matching the cache (so /?foo still finds the cached shell)
+//  - a navigation that can't be served from network OR cache falls back to the cached app shell
+function networkFirst(request) {
+    const isNavigation = request.mode === 'navigate';
+    const fromCache = () => caches.match(request, { ignoreSearch: isNavigation })
+        .then((hit) => hit || (isNavigation ? caches.match('/index.html') : undefined));
+
+    return new Promise((resolve) => {
+        let settled = false;
+        const finish = (response) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            resolve(response);
+        };
+        const timer = setTimeout(() => {
+            fromCache().then((hit) => { if (hit) finish(hit); }).catch(() => {});
+        }, NETWORK_TIMEOUT_MS);
+
+        // cache: 'no-cache' forces revalidation with the server on every request - a 304 lets the browser serve its
+        // own cached copy efficiently if unchanged, a 200 delivers the fresh file if it has changed. Deliberately NOT
+        // 'no-store', which is more aggressive than needed here and more likely to cause edge-case failures on
+        // requests this same origin-wide handler also intercepts.
+        fetch(request, { cache: 'no-cache' }).then((networkResponse) => {
+            if (networkResponse && networkResponse.ok) {
+                const responseToCache = networkResponse.clone();
+                caches.open(CACHE_NAME).then((cache) => {
+                    cache.put(request, responseToCache).catch(() => {});
+                }).catch(() => {});
+            }
+            finish(networkResponse);
+        }).catch(() => {
+            fromCache()
+                .then((hit) => finish(hit || Response.error()))
+                .catch(() => finish(Response.error()));
+        });
+    });
+}
 
 self.addEventListener('install', (event) => {
     event.waitUntil(
@@ -123,25 +178,6 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // 2. Local Files -> NETWORK FIRST (cache: 'no-cache' forces revalidation with
-    // the server on every request - a 304 lets the browser serve its own cached
-    // copy efficiently if unchanged, a 200 delivers the fresh file if it has
-    // changed. Deliberately NOT 'no-store', which is more aggressive than needed
-    // here and more likely to cause edge-case failures on requests this same
-    // origin-wide handler also intercepts.
-    event.respondWith(
-        fetch(event.request, { cache: 'no-cache' }).then((networkResponse) => {
-            if (networkResponse && networkResponse.ok) {
-                const responseToCache = networkResponse.clone();
-                caches.open(CACHE_NAME).then((cache) => {
-                    cache.put(event.request, responseToCache).catch(() => {});
-                }).catch(() => {});
-            }
-            return networkResponse;
-        }).catch(() => {
-            return caches.match(event.request).then((cached) => {
-                return cached || Response.error();
-            });
-        })
-    );
+    // 2. Local Files -> NETWORK FIRST (with timeout + offline fallback, see networkFirst above)
+    event.respondWith(networkFirst(event.request));
 });

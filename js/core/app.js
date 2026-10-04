@@ -964,6 +964,8 @@ function loadFilesFromDB() {
         if (window.CodeMiniPreloader) window.CodeMiniPreloader.markReady('files');
         // Window-switch overlay: this window's files are loaded and its tabs restored.
         if (typeof window.profileLoadingReady === 'function') window.profileLoadingReady(db && db.name);
+        // App shortcut (/?action=...): everything it can click now exists and any saved tabs are back.
+        if (typeof window.runLaunchAction === 'function') window.runLaunchAction();
 
         setTimeout(pushNavState, 50); 
     };
@@ -2233,3 +2235,51 @@ document.addEventListener('DOMContentLoaded', () => {
         if (window.showProfileLoadingOverlay) window.showProfileLoadingOverlay(cellActiveWindow.name, false);
     }
 });
+
+// ==========================================
+// Launch actions: /?action=<name>
+// ==========================================
+// The installed app's shortcuts (long-press / right-click the icon; see "shortcuts" in manifest.json) open the
+// app at /?action=<name>. Each action just drives the same control a person would click, so it behaves exactly
+// like doing it by hand. Keep this list and the manifest in step (tests/pwa.test.js checks that they agree).
+// The action runs once, after the preloader has gone and the saved session has been restored (loadFilesFromDB
+// calls window.runLaunchAction), and is removed from the address bar straight away so a reload doesn't repeat it.
+(function initLaunchActions() {
+    const click = (id) => { const el = document.getElementById(id); if (el) el.click(); };
+    const LAUNCH_ACTIONS = {
+        'new-file': () => click('menuNewFile'),
+        'terminal': () => click('terminalIconItem'),
+        // The search icon is a toggle, and a restored session may already have search showing.
+        'search': () => {
+            const showing = window.innerWidth <= 768
+                ? document.querySelector('.mobile-search-bar.active')
+                : document.getElementById('searchSidebar')?.classList.contains('open');
+            if (!showing) click('searchIconItem');
+        },
+        'settings': () => click('settingsIconItem')
+    };
+
+    let pending = null;
+    try {
+        const url = new URL(window.location.href);
+        const name = url.searchParams.get('action');
+        if (name !== null) {
+            if (Object.prototype.hasOwnProperty.call(LAUNCH_ACTIONS, name)) pending = name;
+            url.searchParams.delete('action');
+            window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
+        }
+    } catch (e) { /* no URL/history support: just open the app normally */ }
+
+    window.runLaunchAction = function () {
+        const name = pending;
+        if (!name) return;
+        pending = null; // once per page load
+        let waited = 0;
+        const run = () => {
+            // Don't act underneath the startup blur (capped, so a stuck preloader can't swallow the action).
+            if (window.CodeMiniPreloader && window.CodeMiniPreloader.isActive() && waited < 10000) { waited += 100; setTimeout(run, 100); return; }
+            try { LAUNCH_ACTIONS[name](); } catch (e) { console.error('Launch action failed:', name, e); }
+        };
+        run();
+    };
+})();

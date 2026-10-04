@@ -858,6 +858,19 @@ document.addEventListener('DOMContentLoaded', () => {
   .update-features { margin: 0; padding-left: 20px; font-size: 13px; color: var(--text-main); line-height: 1.6; }
   .update-features li { margin-bottom: 4px; }
   .update-features li::marker { color: var(--accent-blue); }
+  .update-status { margin-top: 24px; text-align: center; }
+  .update-status > i { font-size: 40px; margin-bottom: 10px; display: block; }
+  .update-status h4 { margin: 0 0 5px 0; color: var(--text-main); }
+  .update-status p { margin: 0 auto; max-width: 480px; color: var(--text-muted); font-size: 13px; line-height: 1.5; }
+  .update-status .update-meta { margin-top: 6px; font-size: 12px; }
+  .update-actions { margin-top: 16px; display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
+  .update-btn { cursor: pointer; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-panel); color: var(--text-main); font: inherit; font-size: 13px; padding: 6px 14px; }
+  .update-btn:hover { border-color: var(--accent-blue); }
+  .update-btn:disabled { opacity: 0.6; cursor: default; }
+  .update-btn.primary { background: var(--accent-blue); border-color: var(--accent-blue); color: var(--text-on-accent, #fff); }
+  .update-how { margin: 0; padding-left: 20px; font-size: 13px; color: var(--text-main); line-height: 1.6; }
+  .update-how li { margin-bottom: 4px; }
+  .update-how li::marker { color: var(--accent-blue); }
   </style>
 
   <div class="settings-container flex-col">
@@ -1070,23 +1083,44 @@ document.addEventListener('DOMContentLoaded', () => {
         <div class="settings-content-section" id="set-updates" data-section-label="Updates">
           <h3 class="settings-category-title">Application Updates</h3>
           <div class="settings-item">
-            <div class="settings-item-info"><strong>Auto Check Updates</strong><span>Check for new CodeMini versions on launch</span></div>
+            <div class="settings-item-info"><strong>Auto Check Updates</strong><span>Re-check for new CodeMini versions every hour and whenever you return to the app. "Check for updates" below always works.</span></div>
             <div class="settings-control"><input type="checkbox" data-setting="autoCheckUpdates"></div>
           </div>
 
           <div id="updateStateContainer">
-            <div class="empty-state" style="margin-top: 30px; text-align: center;">
-              <i class="ri-checkbox-circle-line" style="font-size: 40px; color: var(--color-success); margin-bottom: 10px; display: block;"></i>
-              <h4 style="margin:0 0 5px 0; color: var(--text-main);">You are up to date!</h4>
-              <p style="margin:0;">CodeMini v1.0.0 is the latest available version.</p>
+            <div class="empty-state update-status">
+              <i class="ri-checkbox-circle-line" style="color: var(--color-success);"></i>
+              <h4>You are up to date!</h4>
+              <p>CodeMini v${_V} is the latest available version.</p>
             </div>
+          </div>
+
+          <div style="margin-top: 32px;">
+            <h4 style="color: var(--text-muted); font-size: 12px; text-transform: uppercase; margin-bottom: 15px;">How updates work</h4>
+            <ul class="update-how">
+              <li><strong>Update notice:</strong> when a new version is deployed, a "was updated, Reload" notice appears. It never reloads by itself, so unsaved edits are safe.</li>
+              <li><strong>Re-checks:</strong> CodeMini looks for updates every hour and when you return to it (while Auto Check Updates is on).</li>
+              <li><strong>Notifications:</strong> every update is also kept in Now Island &rsaquo; Notifications until you delete it.</li>
+            </ul>
           </div>
 
           <div style="margin-top: 40px;">
             <h4 style="color: var(--text-muted); font-size: 12px; text-transform: uppercase; margin-bottom: 15px;">Features</h4>
             <div class="update-item">
               <div class="update-header">
-                <div class="update-version"><i class="ri-rocket-line"></i> v1.0.0 <span class="update-badge">Current</span></div>
+                <div class="update-version"><i class="ri-install-line"></i> v${_V} <span class="update-badge">Current</span></div>
+                <div class="update-date">Latest release</div>
+              </div>
+              <div class="update-desc">CodeMini is now a proper installable app.</div>
+              <ul class="update-features">
+                <li><strong>Install App:</strong> add CodeMini to your device from the More menu or your browser.</li>
+                <li><strong>App shortcuts:</strong> long-press or right-click the installed icon for New File, Terminal, Search and Settings.</li>
+                <li><strong>Update notice &amp; notifications:</strong> new versions are announced in a toast, here, and in Now Island.</li>
+              </ul>
+            </div>
+            <div class="update-item">
+              <div class="update-header">
+                <div class="update-version"><i class="ri-rocket-line"></i> v1.0.0</div>
                 <div class="update-date">April 2026</div>
               </div>
               <div class="update-desc">Welcome to the massive v1.0.0 update! We've completely overhauled the IDE with offline-first capabilities.</div>
@@ -1148,6 +1182,87 @@ document.addEventListener('DOMContentLoaded', () => {
   `;
 
   // ==========================================
+  // UPDATES PANE (Settings > Updates)
+  // ==========================================
+  // Mirrors the shared update state kept by pwa.js (toast, this pane and the Now Island notification all read the
+  // same state, so they cannot disagree). Redraws on every state change and stops once the pane is closed.
+  function renderUpdatesPanel(settingsContainer) {
+    const host = settingsContainer.querySelector('#updateStateContainer');
+    const PWA = window.CodeMiniPWA;
+    if (!host) return;
+    const EVT = (PWA && PWA.UPDATE_EVENT) || 'codemini:update-state';
+    const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; };
+
+    const draw = () => {
+      if (!host.isConnected) { window.removeEventListener(EVT, draw); return; }
+      const st = PWA ? PWA.getUpdateState() : { status: 'idle' };
+      const box = mk('div', 'empty-state update-status');
+      const icon = mk('i');
+      const title = mk('h4');
+      const text = mk('p');
+      const actions = mk('div', 'update-actions');
+      let meta = null;
+
+      if (!PWA || !('serviceWorker' in navigator)) {
+        icon.className = 'ri-information-line'; icon.style.color = 'var(--text-muted)';
+        title.textContent = 'Updates are handled by your browser';
+        text.textContent = 'Background updates are not available here. Reload the page to get the latest version.';
+      } else if (st.status === 'updated') {
+        icon.className = 'ri-refresh-line'; icon.style.color = 'var(--accent-new)';
+        title.textContent = 'Update installed';
+        text.textContent = 'CodeMini IDE was updated. Reload to use the latest version. Nothing reloads by itself, so your unsaved changes are safe until you choose to.';
+        const reload = mk('button', 'update-btn primary', 'Reload now');
+        reload.type = 'button';
+        reload.addEventListener('click', () => PWA.reload());
+        actions.appendChild(reload);
+      } else if (st.status === 'checking') {
+        icon.className = 'ri-loader-4-line'; icon.style.color = 'var(--accent-blue)'; icon.style.animation = 'spinStatus 0.8s linear infinite';
+        title.textContent = 'Checking for updates...';
+        text.textContent = 'This only takes a moment.';
+      } else {
+        const failed = !!st.lastCheckFailed;
+        icon.className = failed ? 'ri-wifi-off-line' : 'ri-checkbox-circle-line';
+        icon.style.color = failed ? 'var(--text-muted)' : 'var(--color-success)';
+        title.textContent = failed ? 'Could not check for updates' : 'You are up to date!';
+        text.textContent = failed
+          ? 'CodeMini could not reach the server (are you offline?). You are still on v' + _V + '.'
+          : 'CodeMini v' + _V + ' is the latest available version.';
+        if (st.lastChecked) meta = mk('p', 'update-meta', 'Last checked ' + new Date(st.lastChecked).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }));
+        const check = mk('button', 'update-btn', 'Check for updates');
+        check.type = 'button';
+        check.addEventListener('click', () => { check.disabled = true; PWA.checkForUpdates().then(draw); });
+        actions.appendChild(check);
+      }
+
+      box.append(icon, title, text);
+      if (meta) box.appendChild(meta);
+      if (actions.childNodes.length) box.appendChild(actions);
+      host.textContent = '';
+      host.appendChild(box);
+    };
+
+    window.addEventListener(EVT, draw);
+    draw();
+  }
+
+  // Opens Settings (or focuses it) and switches to one of its sections - used by notifications that point at
+  // Settings > Updates. The pane wires its tabs a moment after it is created, so wait for that.
+  window.openSettingsTab = function (tabId) {
+    settingsIconItem?.click();
+    let tries = 0;
+    const go = () => {
+      const c = document.querySelector('.settings-container');
+      if (c && c.dataset.ready === '1') {
+        const item = c.querySelector(`.settings-sidebar-item[data-tab="${tabId}"]`) || c.querySelector(`.settings-tab[data-tab="${tabId}"]`);
+        if (item) item.click();
+        return;
+      }
+      if (++tries < 40) setTimeout(go, 50);
+    };
+    go();
+  };
+
+  // ==========================================
   // PROFILE CLICK HANDLER
   // ==========================================
   if (profileIconItem) {
@@ -1189,6 +1304,7 @@ document.addEventListener('DOMContentLoaded', () => {
           if (!settingsContainer) return;
 
           window.syncUI();
+          renderUpdatesPanel(settingsContainer);
 
           function switchSettingsTab(tabId) {
             const sections = settingsContainer.querySelectorAll('.settings-content-section');
@@ -1222,6 +1338,7 @@ document.addEventListener('DOMContentLoaded', () => {
               switchSettingsTab(tab.dataset.tab);
             });
           });
+          settingsContainer.dataset.ready = '1'; // window.openSettingsTab waits for this
 
           const searchInput = settingsContainer.querySelector('#settingsSearchInput');
           const searchClear = settingsContainer.querySelector('#settingsSearchClear');
