@@ -1,0 +1,26 @@
+# Dependencies / tooling
+node_modules/
+npm-debug.log*
+
+# Hosting
+.vercel/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Local artifacts
+*.log
+*.patch
+*.orig
+*.rej
+.env
+.env.*
+
+# Playwright
+test-results/
+playwright-report/
+package-lock.json.bak
