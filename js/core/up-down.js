@@ -417,14 +417,28 @@ window.fileRecordToBlob = function(fileData) {
     return new Blob([fileData.content || ''], { type: 'text/plain' });
 };
 
+// A locked file's text is encrypted in storage, so a raw or zip download would only produce an empty file.
+// Those files are skipped (the JSON export keeps them, still encrypted, and restores them locked).
+function notifyLockedSkipped(count) {
+    if (!count || !window.showCustomModal) return;
+    window.showCustomModal({
+        title: 'Locked files skipped',
+        text: `${count} locked file${count === 1 ? ' was' : 's were'} not included. Remove the lock first to download ${count === 1 ? 'it' : 'them'}, or use the JSON export, which keeps locked files encrypted.`,
+        submitText: 'OK'
+    }, () => { if (typeof closeGenModal === 'function') closeGenModal(); });
+}
+
 async function handleDownloadRaw() {
     if (downloadSelectedFiles.size === 0) return;
 
     // Filter out folders and workspaces, keeping only actual files
-    const filesToDownload = Array.from(downloadSelectedFiles).filter(
+    const allCandidates = Array.from(downloadSelectedFiles).filter(
         f => f.type !== 'folder' && f.type !== 'workspace'
     );
+    const filesToDownload = allCandidates.filter(f => !f.isLocked);
+    const lockedSkipped = allCandidates.length - filesToDownload.length;
 
+    if (filesToDownload.length === 0 && lockedSkipped > 0) { notifyLockedSkipped(lockedSkipped); return; }
     if (filesToDownload.length === 0) {
         if (window.showCustomModal) {
             window.showCustomModal({
@@ -468,6 +482,7 @@ async function handleDownloadRaw() {
     }
 
     toggleDownloadMode(); 
+    notifyLockedSkipped(lockedSkipped);
 }
 
 async function handleDownloadJson() {
@@ -530,8 +545,11 @@ async function handleDownloadZip() {
 
     const zip = new JSZip();
 
+    let lockedSkipped = 0;
     const buildZip = (fileObj, currentFolder) => {
-        if (fileObj.type === 'folder' || fileObj.type === 'workspace') {
+        if (fileObj.isLocked && fileObj.type === 'file') {
+            lockedSkipped++;
+        } else if (fileObj.type === 'folder' || fileObj.type === 'workspace') {
             const newFolder = currentFolder.folder(fileObj.name);
             const children = allFiles.filter(f => f.parentId === fileObj.id);
             children.forEach(c => buildZip(c, newFolder));
@@ -552,5 +570,6 @@ async function handleDownloadZip() {
         a.click();
         URL.revokeObjectURL(url);
         toggleDownloadMode();
+        notifyLockedSkipped(lockedSkipped);
     });
 }

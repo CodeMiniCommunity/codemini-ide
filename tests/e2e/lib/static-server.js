@@ -8,7 +8,9 @@ const TYPES = {
   '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.wasm': 'application/wasm',
 };
 
-function createServer(root) {
+// opts.headers: extra response headers (the runner test sends the same frame-ancestors header production does).
+function createServer(root, opts) {
+  const extra = (opts && opts.headers) || {};
   return http.createServer((req, res) => {
     let rel = decodeURIComponent(new URL(req.url, 'http://x').pathname);
     if (rel.endsWith('/')) rel += 'index.html';
@@ -16,7 +18,7 @@ function createServer(root) {
     if (!file.startsWith(root)) { res.writeHead(403).end(); return; }
     fs.readFile(file, (err, data) => {
       if (err) { res.writeHead(404).end('Not found'); return; }
-      res.writeHead(200, { 'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
+      res.writeHead(200, Object.assign({ 'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache' }, extra));
       res.end(data);
     });
   });

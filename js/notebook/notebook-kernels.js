@@ -32,6 +32,37 @@ function _getWinId() {
     return typeof cellActiveWinId !== 'undefined' ? cellActiveWinId : (localStorage.getItem('codemini_active_window') || 'win_default');
 }
 
+// ---- Notifications (Now Island) ----
+// Long work (an engine download, a long run) is only worth a notification when the person is not looking at it:
+// the app is in the background, or they have switched to another window/profile since it started.
+const NB_LONG_RUN_MS = 15000; // shorter runs finish before anyone has looked away
+function _nbAway(startWin) {
+    return document.hidden || _getWinId() !== startWin;
+}
+function _nbNotify(n) {
+    try {
+        if (window.CodeMiniNotifications) window.CodeMiniNotifications.add(Object.assign({ source: 'Notebooks', kind: 'notebook' }, n));
+    } catch (e) { /* notifications are optional */ }
+}
+function _nbTitleOf(pane) {
+    try {
+        const tab = pane && pane.id ? document.querySelector('.tab[data-target="' + pane.id + '"]') : null;
+        const name = tab && tab.querySelector('span') ? tab.querySelector('span').textContent.trim() : '';
+        return name || 'Your notebook';
+    } catch (e) { return 'Your notebook'; }
+}
+// Called by Run All when it ends. `interrupted` runs are the person's own doing, so they are not announced.
+window.notifyNotebookRunDone = function (pane, startedAt, startWin, interrupted) {
+    if (interrupted || Date.now() - startedAt < NB_LONG_RUN_MS || !_nbAway(startWin)) return;
+    const secs = Math.round((Date.now() - startedAt) / 1000);
+    const took = secs >= 60 ? Math.floor(secs / 60) + ' min ' + (secs % 60) + ' s' : secs + ' s';
+    _nbNotify({
+        id: 'nb-run-' + (pane && pane.id ? pane.id : 'x'),
+        title: 'Notebook run finished',
+        text: _nbTitleOf(pane) + ' finished running all its cells in ' + took + '.'
+    });
+};
+
 Object.defineProperty(window, 'phpWebInstance', {
     get: () => kernelRegistry.php.instances[_getWinId()] || null,
     set: (v) => { kernelRegistry.php.instances[_getWinId()] = v; }
@@ -96,7 +127,7 @@ window.setKernelStatus = function(pane, msg, isError = false) {
     if (kType === 'r') baseTxt = '<i class="fab fa-r-project" style="color: #276dc3;"></i> R (WebR)';
     else if (kType === 'sql') baseTxt = '<i class="ri-database-2-line" style="color: #4CAF50;"></i> SQL (SQLite)';
     
-    kernelStatus.innerHTML = `${baseTxt} -- ${msg}`;
+    kernelStatus.innerHTML = `${baseTxt} -- ${CodeMiniEscape.html(msg)}`;
     kernelStatus.style.color = isError ? 'var(--color-danger)' : '';
 };
 
@@ -310,7 +341,8 @@ async function renderMarkdown(text) {
     }
 
     const wrap = document.createElement('div');
-    wrap.innerHTML = md.parse(text);
+    // Markdown cells can carry raw HTML from the .ipynb: keep the markup, drop anything that can run.
+    wrap.innerHTML = CodeMiniEscape.sanitize(md.parse(text));
 
     // marked's plain output needs two small adjustments to match what this
     // app actually needs from it:
@@ -447,6 +479,7 @@ except Exception:
 `);
                 window._coreEngines.pyodide = py;
                 statusCircles.forEach(c => c.classList.remove('running'));
+                if (_nbAway(winId)) _nbNotify({ id: 'nb-engine-python', title: 'Python is ready', text: 'The Python engine finished loading. It is ready to run your notebook cells and stays loaded until you reload the app.' });
             } catch (e) {
                 window._coreEngines.loading.pyodide = false;
                 document.querySelectorAll('.status-circle').forEach(c => c.classList.remove('running'));
@@ -492,6 +525,7 @@ sys.stderr = io.StringIO()
 };
 
 window.getWebRInstance = async function() {
+    const winId = _getWinId();
     const pane = document.querySelector('.editor-group.active-group .content-pane.active') || document.querySelector('.content-pane.active');
 
     if (!window._coreEngines.webr) {
@@ -512,6 +546,7 @@ window.getWebRInstance = async function() {
                 window._coreEngines.webr = webr;
 
                 statusCircles.forEach(c => c.classList.remove('running'));
+                if (_nbAway(winId)) _nbNotify({ id: 'nb-engine-r', title: 'R is ready', text: 'The R engine finished loading. It is ready to run your notebook cells and stays loaded until you reload the app.' });
             } catch(e) {
                 window._coreEngines.loading.webr = false;
                 document.querySelectorAll('.status-circle').forEach(c => c.classList.remove('running'));
@@ -540,6 +575,7 @@ window.getRNamespace = async function(webr, winId) {
 
 window.installPackage = async function(pkgName, kernel = 'python', e) {
     if(e) e.stopPropagation();
+    const installWin = _getWinId();
     
     const statusDiv = document.getElementById(`pkg-status-${kernel}-${pkgName}`);
     if(statusDiv) statusDiv.innerHTML = '<i class="ri-loader-4-line pkg-install-btn" style="animation: spinStatus 0.5s linear infinite;"></i>';
@@ -572,6 +608,7 @@ window.installPackage = async function(pkgName, kernel = 'python', e) {
 
         window.setKernelStatus(pane, `${pkgName} installed!`);
         setTimeout(() => window.resetKernelStatus(pane), 2000);
+        if (_nbAway(installWin)) _nbNotify({ id: 'nb-pkg-' + kernel + '-' + pkgName, title: pkgName + ' is installed', text: 'The ' + (kernel === 'r' ? 'R' : 'Python') + ' package ' + pkgName + ' finished installing and can be imported in your notebooks.' });
         
     } catch (err) {
         if (err.message === 'Interrupted') {
@@ -580,7 +617,8 @@ window.installPackage = async function(pkgName, kernel = 'python', e) {
         } else {
             window.showCustomModal({title:'Install Failed', text:`Failed to install ${pkgName}: ${err.message}`, submitText:'OK'}, ()=>{});
         }
-        if(statusDiv) statusDiv.innerHTML = `<i class="ri-download-cloud-2-line pkg-install-btn" onclick="window.installPackage('${pkgName}', '${kernel}', event)" title="Install ${pkgName}"></i>`;
+        // The name goes into a JS string inside an attribute: JSON-quote it, then HTML-escape the whole call argument.
+        if(statusDiv) statusDiv.innerHTML = `<i class="ri-download-cloud-2-line pkg-install-btn" onclick="window.installPackage(${CodeMiniEscape.html(JSON.stringify(String(pkgName)))}, ${CodeMiniEscape.html(JSON.stringify(String(kernel)))}, event)" title="Install ${CodeMiniEscape.html(pkgName)}"></i>`;
     } finally { 
         document.querySelectorAll('.status-circle').forEach(c => c.classList.remove('running')); 
         window.kernelInterrupted = false;
@@ -693,7 +731,7 @@ json.dumps(_result)
             if (res.length > 0 && res[0].values.length > 0) {
                 html = '<table class="vars-table"><thead><tr><th>Table Name</th></tr></thead><tbody>';
                 res[0].values.forEach(row => {
-                    html += `<tr><td style="font-weight:600; color:var(--accent-blue);"><i class="ri-table-2" style="margin-right: 5px;"></i>${row[0]}</td></tr>`;
+                    html += `<tr><td style="font-weight:600; color:var(--accent-blue);"><i class="ri-table-2" style="margin-right: 5px;"></i>${CodeMiniEscape.html(row[0])}</td></tr>`;
                 });
                 html += '</tbody></table>';
             } else {
@@ -704,7 +742,7 @@ json.dumps(_result)
         }
         contentDiv.innerHTML = html;
     } catch (err) {
-        contentDiv.innerHTML = `<div style="padding: 20px; color: var(--color-danger); text-align:center;">Failed to fetch variables: ${err.message}</div>`;
+        contentDiv.innerHTML = `<div style="padding: 20px; color: var(--color-danger); text-align:center;">Failed to fetch variables: ${CodeMiniEscape.html(err.message)}</div>`;
     }
 };
 
@@ -1233,7 +1271,7 @@ _res
                 card.style.overflow = 'hidden';
                 card.style.border = '1px solid var(--border-color)';                
 
-                const imgSrc = `data:image/png;base64,${b64}`;
+                const imgSrc = `data:image/png;base64,${String(b64).replace(/[^A-Za-z0-9+/=]/g, '')}`;
                 
                 card.innerHTML = `
                     <div style="padding: 10px; background: ${bgStr}; text-align: center;">
@@ -1268,7 +1306,7 @@ _res
         if (errorMessage.includes('KeyboardInterrupt') || errorMessage.includes('InterruptException') || window.kernelInterrupted) {
             outputDiv.innerHTML = '<span style="color: var(--color-danger); font-weight: bold;">[Execution Interrupted] The kernel was stopped by the user.</span>';
         } else {
-            outputDiv.innerHTML = `<span style="color: var(--color-danger);">Error: ${errorMessage.replace(/\n/g, '<br>')}</span>`;
+            outputDiv.innerHTML = `<span style="color: var(--color-danger);">Error: ${CodeMiniEscape.html(errorMessage).replace(/\n/g, '<br>')}</span>`;
         }
         prompt.innerHTML = originalPrompt; prompt.style.color = '';
     } finally {

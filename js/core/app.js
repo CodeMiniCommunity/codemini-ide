@@ -91,7 +91,7 @@ window.showSuccessToast = function(message) {
     // Content layout with matching checklist/success icon
     const contentDiv = document.createElement('div');
     contentDiv.className = 'custom-toast-content';
-    contentDiv.innerHTML = `<i class="ri-checkbox-circle-line"></i><span>${message}</span>`;
+    contentDiv.innerHTML = `<i class="ri-checkbox-circle-line"></i><span>${CodeMiniEscape.html(message)}</span>`;
     
     // Close Action Icon (Using pre-loaded Remixicons)
     const closeIcon = document.createElement('i');
@@ -293,7 +293,7 @@ function showWindowActionsMenu(e, w) {
 
     const addOption = (icon, text, handler, colorStyle = '') => {
         const div = document.createElement('div'); div.className = 'dropdown-item';
-        div.innerHTML = `<i class="${icon}" style="${colorStyle}"></i> <span style="${colorStyle}">${text}</span>`;
+        div.innerHTML = `<i class="${icon}" style="${colorStyle}"></i> <span style="${colorStyle}">${CodeMiniEscape.html(text)}</span>`;
         div.onclick = (event) => { event.stopPropagation(); menu.classList.remove('show'); handler(); };
         menu.appendChild(div);
     };
@@ -764,6 +764,19 @@ function loadFilesFromDB() {
     const req = tx.objectStore('filesystem').getAll();
     req.onsuccess = () => {
         const allFiles = req.result;
+
+        // Locks made before items were hashed/encrypted keep their password as plain text; upgrade them now,
+        // in the background, in the database they were read from.
+        if (window.CodeMiniLock && allFiles.some(window.CodeMiniLock.isLegacy)) {
+            const sourceDb = db;
+            window.CodeMiniLock.migrateLegacy(allFiles, (rec) => new Promise((resolve) => {
+                try {
+                    const mtx = sourceDb.transaction('filesystem', 'readwrite');
+                    mtx.objectStore('filesystem').put(rec);
+                    mtx.oncomplete = () => resolve(); mtx.onerror = () => resolve(); mtx.onabort = () => resolve();
+                } catch (e) { resolve(); }
+            }));
+        }
         
         // FIX: Ensure workspaces list is updated globally even if inside a workspace
         if (db.name !== cellActiveWindow.db) {
@@ -920,6 +933,17 @@ function loadFilesFromDB() {
                                     if (pane) targetGroup.querySelector('.panes-container').appendChild(pane);
                                 }
                             }
+                        } else if (t.type === 'versions') {
+                            if (typeof window.openVersionHistoryTab === 'function') {
+                                window.openVersionHistoryTab();
+                                const verTab = document.querySelector('.tab[data-type="versions"]');
+                                if (verTab && targetGroup && verTab.closest('.editor-group') !== targetGroup) {
+                                    const addBtn = targetGroup.querySelector('.add-tab');
+                                    if (addBtn) targetGroup.querySelector('.tabs-bar').insertBefore(verTab, addBtn);
+                                    const pane = document.getElementById(verTab.dataset.target);
+                                    if (pane) targetGroup.querySelector('.panes-container').appendChild(pane);
+                                }
+                            }
                         } else if (t.type === 'help') {
                             const helpBtn = document.getElementById('menuHelp');
                             if (helpBtn) {
@@ -1063,7 +1087,7 @@ if (genericModal) {
 
 window.showCustomModal = function({ title, text, inputType, inputValue, placeholder, placeholder2, requireBoth, submitText }, callback) {
     genModalLabel.textContent = title;
-    if (text) { genModalText.innerHTML = text; genModalText.style.display = 'block'; } else { genModalText.style.display = 'none'; }
+    if (text) { genModalText.textContent = text; genModalText.style.display = 'block'; } // text, never HTML: callers put file and workspace names in it else { genModalText.style.display = 'none'; }
     genModalInput.style.display = 'none'; genModalPassword.style.display = 'none';
     genModalInput.value = inputValue || ''; genModalPassword.value = '';
     genModalError.style.display = 'none'; genModalSubmit.textContent = submitText || 'OK';
@@ -1249,7 +1273,7 @@ function showContextMenu(e, file) {
     
     const addOption = (icon, text, handler, colorStyle = '') => {
         const div = document.createElement('div'); div.className = 'dropdown-item';
-        div.innerHTML = `<i class="${icon}" style="${colorStyle}"></i> <span style="${colorStyle}">${text}</span>`;
+        div.innerHTML = `<i class="${icon}" style="${colorStyle}"></i> <span style="${colorStyle}">${CodeMiniEscape.html(text)}</span>`;
         div.onclick = (event) => { event.stopPropagation(); menu.classList.remove('show'); handler(); };
         menu.appendChild(div);
     };
@@ -1268,7 +1292,7 @@ function showContextMenu(e, file) {
         const addSub = (icon, text, mode) => {
             const subItem = document.createElement('div');
             subItem.className = 'dropdown-item';
-            subItem.innerHTML = `<i class="${icon}"></i> <span>${text}</span>`;
+            subItem.innerHTML = `<i class="${icon}"></i> <span>${CodeMiniEscape.html(text)}</span>`;
             subItem.onclick = (evt) => {
                 evt.stopPropagation(); 
                 menu.classList.remove('show');
@@ -1555,9 +1579,14 @@ function showContextMenu(e, file) {
     if (!isMulti && !file.isLocked) {
         const lockText = file.type === 'folder' || file.type === 'workspace' ? 'Lock Folder' : 'Lock File';
         addOption('ri-lock-line', lockText, () => {
-            window.showCustomModal({ title: lockText, inputType: 'password', submitText: 'Lock' }, (pwd) => {
+            window.showCustomModal({ title: lockText, inputType: 'password', submitText: 'Lock' }, async (pwd) => {
                 if(pwd) {
-                    file.isLocked = true; file.password = pwd; file.timestamp = Date.now(); saveFileToDB(file); closeGenModal();
+                    try {
+                        await window.CodeMiniLock.lockRecord(file, pwd);
+                        file.timestamp = Date.now(); saveFileToDB(file); closeGenModal();
+                    } catch (e) {
+                        genModalError.textContent = 'Could not lock this item.'; genModalError.style.display = 'block';
+                    }
                 } else {
                     genModalError.textContent = 'Password cannot be empty.'; genModalError.style.display = 'block';
                 }
@@ -1567,18 +1596,22 @@ function showContextMenu(e, file) {
 
     if (!isMulti && file.isLocked) {
         addOption('ri-lock-unlock-line', 'Remove Lock', () => {
-            window.showCustomModal({ title: 'Remove Lock', text: 'Enter current password to remove lock:', inputType: 'password', submitText: 'Unlock' }, (pwd) => {
-                if (pwd === file.password) {
-                    file.isLocked = false; file.password = null; file.timestamp = Date.now(); saveFileToDB(file); closeGenModal();
+            window.showCustomModal({ title: 'Remove Lock', text: 'Enter current password to remove lock:', inputType: 'password', submitText: 'Unlock' }, async (pwd) => {
+                let removed = false;
+                try { removed = await window.CodeMiniLock.removeLock(file, pwd); } catch (e) { removed = false; }
+                if (removed) {
+                    file.timestamp = Date.now(); saveFileToDB(file); closeGenModal();
                     window.showCustomModal({ title: 'Success', text: 'Lock removed successfully.', submitText: 'OK' }, () => { });
                 } else { genModalError.textContent = 'Incorrect password.'; genModalError.style.display = 'block'; }
             });
         });
 
         addOption('ri-lock-password-line', 'Change Password', () => {
-            window.showCustomModal({ title: 'Change Password', inputType: 'double-password', placeholder: 'Old Password', placeholder2: 'New Password', requireBoth: true, submitText: 'Change' }, (res) => {
-                if (res.val1 === file.password) {
-                    file.password = res.val2; file.timestamp = Date.now(); saveFileToDB(file); closeGenModal();
+            window.showCustomModal({ title: 'Change Password', inputType: 'double-password', placeholder: 'Old Password', placeholder2: 'New Password', requireBoth: true, submitText: 'Change' }, async (res) => {
+                let changed = false;
+                try { changed = await window.CodeMiniLock.changePassword(file, res.val1, res.val2); } catch (e) { changed = false; }
+                if (changed) {
+                    file.timestamp = Date.now(); saveFileToDB(file); closeGenModal();
                     window.showCustomModal({ title: 'Success', text: 'Password changed successfully.', submitText: 'OK' }, () => { });
                 } else { genModalError.textContent = 'Incorrect old password.'; genModalError.style.display = 'block'; }
             });
@@ -1915,9 +1948,13 @@ function handleModalSubmit() {
     }
 
     const targetParentId = window.creationTargetFolderId || folderStack[folderStack.length - 1].id;
-    isNameDuplicate(name, targetParentId, (exists) => {
+    isNameDuplicate(name, targetParentId, async (exists) => {
         if (exists) { modalError.textContent = "An item with this name already exists in the selected location."; modalError.style.display = 'block'; return; }
-        const fileObj = { id: Date.now().toString() + Math.random().toString(36).substring(2), parentId: targetParentId, name: name, type: creationMode.includes('folder') ? 'folder' : 'file', isLocked: isLocked, password: isLocked ? modalPassword.value : null, content: "", timestamp: Date.now() };
+        const fileObj = { id: Date.now().toString() + Math.random().toString(36).substring(2), parentId: targetParentId, name: name, type: creationMode.includes('folder') ? 'folder' : 'file', isLocked: false, password: null, content: "", timestamp: Date.now() };
+        if (isLocked) {
+            try { await window.CodeMiniLock.lockRecord(fileObj, modalPassword.value); }
+            catch (e) { modalError.textContent = "Could not lock this item."; modalError.style.display = 'block'; return; }
+        }
         saveFileToDB(fileObj); closeModal();
     });
 }
@@ -2027,7 +2064,8 @@ newItem.style.setProperty('--tree-indent', `${level * indentBase}px`);
     // as a sibling of it - .file-name-wrap is flex:1 and stretches to fill the row,
     // so anything placed outside it gets shoved out to the far-right edge instead of
     // sitting next to the (possibly truncated) name where it reads naturally.
-    const nameHTML = `<span class="file-name-wrap" title="${file.name}"><span class="file-name-head">${nameHead}</span><span class="file-name-tail">${nameTail}</span>${lockIcon}</span>`;
+    // File names are untrusted (zips, cloned repos, imports): escape every piece that reaches the markup.
+    const nameHTML = `<span class="file-name-wrap" title="${CodeMiniEscape.html(file.name)}"><span class="file-name-head">${CodeMiniEscape.html(nameHead)}</span><span class="file-name-tail">${CodeMiniEscape.html(nameTail)}</span>${lockIcon}</span>`;
 
     if(isFolder) {
         newItem.innerHTML = `<div class="file-item-left"><span class="file-icons-wrap">${expandIcon}<i class="ri-folder-2-line file-icon icon-folder"></i></span>${nameHTML}</div><div class="file-item-right">${dateStr}</div>`;
@@ -2050,8 +2088,8 @@ newItem.style.setProperty('--tree-indent', `${level * indentBase}px`);
                 loadFilesFromDB();
             } else {
                 if (file.isLocked) {
-                    window.showCustomModal({ title: 'Item Locked', text: `Enter password to access ${file.name}:`, inputType: 'password', submitText: 'Unlock' }, (pwd) => {
-                        if (pwd !== file.password) { window.showCustomModal({ title: 'Error', text: 'Incorrect password!', submitText: 'OK' }, () => {}); return; }
+                    window.showCustomModal({ title: 'Item Locked', text: `Enter password to access ${file.name}:`, inputType: 'password', submitText: 'Unlock' }, async (pwd) => {
+                        if (!await window.CodeMiniLock.unlock(file, pwd, saveFileToDB)) { window.showCustomModal({ title: 'Error', text: 'Incorrect password!', submitText: 'OK' }, () => {}); return; }
                         window.expandedFolders.add(file.id);
                         loadFilesFromDB();
                         closeGenModal();
@@ -2156,8 +2194,8 @@ function handleFileClick(file, element, allFilesContext) {
         return;
     }
     if (file.isLocked) {
-        window.showCustomModal({ title: 'Item Locked', text: `Enter password to access ${file.name}:`, inputType: 'password', submitText: 'Unlock' }, (pwd) => {
-            if (pwd !== file.password) { window.showCustomModal({ title: 'Error', text: 'Incorrect password!', submitText: 'OK' }, () => {}); return; }
+        window.showCustomModal({ title: 'Item Locked', text: `Enter password to access ${file.name}:`, inputType: 'password', submitText: 'Unlock' }, async (pwd) => {
+            if (!await window.CodeMiniLock.unlock(file, pwd, saveFileToDB)) { window.showCustomModal({ title: 'Error', text: 'Incorrect password!', submitText: 'OK' }, () => {}); return; }
             proceedWithFileOpen(file); closeGenModal();
         }); return;
     }
@@ -2180,11 +2218,28 @@ window.enterWorkspace = function(file) {
     });
 };
 
+// Opening a locked file from anywhere (session restore, terminal, search) goes through the password prompt: the
+// editor refuses a locked file whose text has not been decrypted (see openFileInTab).
+window.promptUnlockAndOpen = function(file) {
+    window.showCustomModal({ title: 'Item Locked', text: `Enter password to access ${file.name}:`, inputType: 'password', submitText: 'Unlock' }, async (pwd) => {
+        if (!await window.CodeMiniLock.unlock(file, pwd, saveFileToDB)) { window.showCustomModal({ title: 'Error', text: 'Incorrect password!', submitText: 'OK' }, () => {}); return; }
+        closeGenModal(); proceedWithFileOpen(file);
+    });
+};
+
 function proceedWithFileOpen(file) {
     if (file.type === 'workspace') { window.enterWorkspace(file); return; }
     if (file.type === 'folder') { folderStack.push({ id: file.id, name: file.name }); loadFilesFromDB(); return; }
     const tx = db.transaction('filesystem', 'readonly');
-    tx.objectStore('filesystem').get(file.id).onsuccess = (e) => { const freshFile = e.target.result; if(freshFile && typeof openFileInTab === 'function') openFileInTab(freshFile); };
+    tx.objectStore('filesystem').get(file.id).onsuccess = async (e) => {
+        const freshFile = e.target.result;
+        if (!freshFile || typeof openFileInTab !== 'function') return;
+        if (freshFile.isLocked) {
+            try { await window.CodeMiniLock.reveal(freshFile); }
+            catch (err) { window.showCustomModal({ title: 'Error', text: 'This locked file could not be decrypted.', submitText: 'OK' }, () => {}); return; }
+        }
+        openFileInTab(freshFile);
+    };
 }
 
 // Background Memory Management Loop

@@ -309,7 +309,7 @@ window.getTerminalCommands = function(
                     const size = isHuman ? formatBytes(sizeRaw) : sizeRaw;
                     const date = new Date(f.timestamp).toLocaleDateString();
                     const color = f.isLocked ? '#e06c75' : (isDir ? '#61afef' : (perms.includes('x') ? '#98c379' : '#abb2bf'));
-                    html += `<tr><td style="padding-right:15px; font-family: monospace;">${perms}</td><td style="padding-right:15px;">user</td><td style="padding-right:15px; font-family: monospace;">${size}</td><td style="padding-right:15px;">${date}</td><td style="color:${color};">${f.name}${isDir?'/':''}</td></tr>`;
+                    html += `<tr><td style="padding-right:15px; font-family: monospace;">${perms}</td><td style="padding-right:15px;">user</td><td style="padding-right:15px; font-family: monospace;">${size}</td><td style="padding-right:15px;">${date}</td><td style="color:${color};">${CodeMiniEscape.html(f.name)}${isDir?'/':''}</td></tr>`;
                 }
                 html += `</table>`;
                 printTerm(html, true);
@@ -319,10 +319,10 @@ window.getTerminalCommands = function(
                 items = items.concat(files.map(f => {
                     const isDir = f.type === 'folder' || f.type === 'workspace';
                     const perms = f.perms || (isDir ? 'drwxr-xr-x' : (f.isLocked ? '-r--------' : (f.name.endsWith('.sh') || f.name.endsWith('.js') ? '-rwxr-xr-x' : '-rw-r--r--')));
-                    if (f.isLocked) return `<span style="color: #e06c75;">${f.name}${isDir?'/':''}</span>`;
-                    if (isDir) return `<span style="color: #61afef;">${f.name}/</span>`;
-                    if (perms.includes('x')) return `<span style="color: #98c379;">${f.name}</span>`;
-                    return `<span style="color: #abb2bf;">${f.name}</span>`;
+                    if (f.isLocked) return `<span style="color: #e06c75;">${CodeMiniEscape.html(f.name)}${isDir?'/':''}</span>`;
+                    if (isDir) return `<span style="color: #61afef;">${CodeMiniEscape.html(f.name)}/</span>`;
+                    if (perms.includes('x')) return `<span style="color: #98c379;">${CodeMiniEscape.html(f.name)}</span>`;
+                    return `<span style="color: #abb2bf;">${CodeMiniEscape.html(f.name)}</span>`;
                 }));
                 printTerm(items.join('&nbsp;&nbsp;&nbsp;&nbsp;'), true);
             }
@@ -786,12 +786,12 @@ window.getTerminalCommands = function(
             
             const matches = allFiles.filter(f => f.name.includes(term));
             if(matches.length === 0) return printTerm('find: no matches found');
-            printTerm(matches.map(m => getPath(m)).join('<br>'), true);
+            printTerm(matches.map(m => CodeMiniEscape.html(getPath(m))).join('<br>'), true);
         },
         tree: async () => {
             const allFiles = await dbGetAll();
             const curId = getCurrentFolderId();
-            let treeOutput = `<span style="color:#61afef">${termState.folderStack[termState.folderStack.length - 1].name}</span>\n`;
+            let treeOutput = `<span style="color:#61afef">${CodeMiniEscape.html(termState.folderStack[termState.folderStack.length - 1].name)}</span>\n`;
             
             const traverse = (parentId, prefix = '') => {
                 const children = allFiles.filter(f => f.parentId === parentId).sort((a,b) => a.name.localeCompare(b.name));
@@ -802,7 +802,7 @@ window.getTerminalCommands = function(
                     const isDir = child.type === 'folder' || child.type === 'workspace';
                     const color = child.isLocked ? '#e06c75' : (isDir ? '#61afef' : '#abb2bf');
                     
-                    treeOutput += `${prefix}${connector}<span style="color:${color}">${child.name}</span>\n`;
+                    treeOutput += `${prefix}${connector}<span style="color:${color}">${CodeMiniEscape.html(child.name)}</span>\n`;
                     if(isDir && !child.isLocked) traverse(child.id, prefix + (isLast ? '    ' : '│   '));
                 });
             };

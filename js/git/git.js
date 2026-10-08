@@ -915,7 +915,10 @@ function gitGetPendingMerge(dbName) {
 }
 function gitSavePendingMerge(dbName, state) {
     if (state) localStorage.setItem(gitStorageKey(dbName, 'mergestate'), JSON.stringify(state));
-    else localStorage.removeItem(gitStorageKey(dbName, 'mergestate'));
+    else {
+        localStorage.removeItem(gitStorageKey(dbName, 'mergestate'));
+        if (!gitGetPendingRebase(dbName)) gitClearNotice('git-conflict-' + dbName);
+    }
 }
 // Pending-rebase state, mirroring real git's rebase-in-progress bookkeeping
 // (normally spread across .git/rebase-merge/*): which branch is being
@@ -933,7 +936,10 @@ function gitGetPendingRebase(dbName) {
 }
 function gitSavePendingRebase(dbName, state) {
     if (state) localStorage.setItem(gitStorageKey(dbName, 'rebasestate'), JSON.stringify(state));
-    else localStorage.removeItem(gitStorageKey(dbName, 'rebasestate'));
+    else {
+        localStorage.removeItem(gitStorageKey(dbName, 'rebasestate'));
+        if (!gitGetPendingMerge(dbName)) gitClearNotice('git-conflict-' + dbName);
+    }
 }
 
 
@@ -1554,7 +1560,9 @@ async function gitCherryPickCommit(sourceSha) {
         });
         gitLog('cherry-pick', `Cherry-pick of ${gitShortSha(sourceSha)} has ${conflicts.length} conflict(s) - resolve and commit to finish`, 'error', { sha: gitShortSha(sourceSha), conflicts: conflicts.length }, dbName);
         window.renderGitPanel();
-        if (window.showSuccessToast) window.showSuccessToast(`${conflicts.length} conflict(s) - resolve in Changes tab`);
+        gitNotifyConflict(dbName, 'Merge conflicts need your attention',
+            `Cherry-picking ${gitShortSha(sourceSha)} left ${conflicts.length} conflict(s). Open Source Control, resolve them in the Changes tab, then commit to finish.`,
+            `${conflicts.length} conflict(s) - resolve in Changes tab`);
         return;
     }
 
@@ -1937,7 +1945,9 @@ function gitMergeBranch(sourceBranchName) {
             });
             gitLog('merge', `Merge of "${sourceBranchName}" into "${targetBranchName}" has ${conflicts.length} conflict(s) - resolve and commit to finish`, 'error', { source: sourceBranchName, target: targetBranchName, conflicts: conflicts.length }, dbName);
             window.renderGitPanel();
-            if (window.showSuccessToast) window.showSuccessToast(`${conflicts.length} conflict(s) - resolve in Changes tab`);
+            gitNotifyConflict(dbName, 'Merge conflicts need your attention',
+                `Merging "${sourceBranchName}" into "${targetBranchName}" left ${conflicts.length} conflict(s). Open Source Control, resolve them in the Changes tab, then commit to finish.`,
+                `${conflicts.length} conflict(s) - resolve in Changes tab`);
             return;
         }
 
@@ -2103,7 +2113,9 @@ async function gitContinueRebase() {
             gitSavePendingRebase(dbName, pending);
             gitLog('rebase', `Rebase of "${pending.branch}" onto "${pending.ontoBranch}" paused: commit ${pending.nextIndex + 1}/${pending.originalShas.length} (${gitShortSha(originalSha)}) has ${conflicts.length} conflict(s)`, 'error', { branch: pending.branch, onto: pending.ontoBranch, conflicts: conflicts.length }, dbName);
             window.renderGitPanel();
-            if (window.showSuccessToast) window.showSuccessToast(`Rebase paused: ${conflicts.length} conflict(s) on commit ${pending.nextIndex + 1}/${pending.originalShas.length}`);
+            gitNotifyConflict(dbName, 'Rebase paused on a conflict',
+                `Rebasing "${pending.branch}" onto "${pending.ontoBranch}" stopped at commit ${pending.nextIndex + 1}/${pending.originalShas.length}: ${conflicts.length} conflict(s). Open Source Control, resolve them in the Changes tab, then continue the rebase.`,
+                `Rebase paused: ${conflicts.length} conflict(s) on commit ${pending.nextIndex + 1}/${pending.originalShas.length}`);
             return;
         }
 
@@ -2392,10 +2404,205 @@ function gitSnapshotInputs(sidebar, ui) {
 }
 
 // --- Small helpers ------------------------------------------------------------
-function gitGetToken() {
-    gitMigrateLegacyToken();
+// WHERE THE GITHUB TOKEN LIVES
+//   1. Encrypted with Shield's device key, in localStorage under gitEncKey(winId). This is the normal home. No
+//      password is involved, so the token stays usable after My Keys locks. It protects against a copy of the
+//      browser's storage or a leaked backup; it does not protect against someone using this open browser, or
+//      script running in this page (see SECURITY.md).
+//   2. The My Keys vault. Used when the device key is not available (no IndexedDB), and it is where the previous
+//      version put the token. A token found there moves to the device key the next time My Keys is unlocked.
+//   3. Plain text under gitTokenKey(winId): only what very old versions saved. It is encrypted with the device
+//      key the first time this page loads, and no unlock is needed for that.
+// gitGetToken() has to stay synchronous (many callers) but decrypting is async, so the decrypted token is held in
+// gitTokenCache for the life of the page (the "session cache"). It is filled by gitHydrateToken(), lives in memory
+// only, is per window/profile, and is NOT emptied when My Keys locks.
+function gitKeys() { return window.CodeMiniKeys || null; }
+function gitDevice() { const s = window.CodeMiniShield; return s && s.device && s.device.supported ? s.device : null; }
+function gitEncKey(winId) { return `codemini_git_gh_tokenenc_${winId || gitWinId()}`; }
+// The purpose is authenticated by Shield, so one window's record does not open as another window's token.
+function gitTokenPurpose(winId) { return `github-token:${winId}`; }
+const gitTokenCache = {};    // winId -> decrypted token (memory only)
+const gitTokenGen = {};      // winId -> counter, bumped on every save/remove so an older async load cannot overwrite a newer token
+const gitTokenLoad = {};     // winId -> Promise of the first load
+const gitTokenLoaded = {};   // winId -> true once that load has finished
+const gitTokenProblem = {};  // winId -> 'lost' (cannot be decrypted any more) | 'unavailable' (key storage unreachable)
+function gitBumpTokenGen(winId) { gitTokenGen[winId] = (gitTokenGen[winId] || 0) + 1; }
+function gitHasEncRecord(winId) { try { return localStorage.getItem(gitEncKey(winId)) !== null; } catch (e) { return false; } }
+function gitVaultToken() {
+    try { const k = gitKeys(); return (k && k.getSecret && k.getSecret('github-token')) || ''; } catch (e) { return ''; }
+}
+function gitLegacyPlainToken() {
     try { return localStorage.getItem(gitTokenKey()) || ''; } catch (e) { return ''; }
 }
+function gitGetToken() {
+    gitMigrateLegacyToken();
+    return gitTokenCache[gitWinId()] || gitVaultToken() || gitLegacyPlainToken();
+}
+// True while the encrypted token for this window exists but has not been decrypted yet (the first moments of a page).
+function gitTokenLoading() {
+    const w = gitWinId();
+    return !!(gitDevice() && !gitTokenCache[w] && !gitTokenLoaded[w] && gitHasEncRecord(w));
+}
+// True when this window has connected GitHub before but the token cannot be read right now: it is still in My Keys
+// (saved by the previous version, or the device key is unavailable) and My Keys is locked.
+function gitTokenLocked() {
+    const k = gitKeys(), w = gitWinId();
+    return !!(k && !k.isUnlocked() && !gitTokenCache[w] && !gitLegacyPlainToken() && !gitTokenLoading() && !gitTokenProblem[w] && gitGetGhProfile());
+}
+function gitNoTokenMessage() {
+    const p = gitTokenProblem[gitWinId()];
+    if (p === 'lost') return 'The saved GitHub token can no longer be decrypted on this device. Add it again in the Config tab.';
+    if (p === 'unavailable') return 'This browser\'s key storage cannot be reached, so the saved GitHub token cannot be read. Reload the page or add the token again in the Config tab.';
+    if (gitTokenLoading()) return 'Still loading your saved GitHub token. Try again in a moment.';
+    if (gitTokenLocked()) return gitDevice() ? 'Unlock My Keys once: your GitHub token is still stored there and will move to this device\'s key.' : 'Unlock My Keys to use your saved GitHub token.';
+    return 'Connect your GitHub account in the Config tab first.';
+}
+function gitRequestVaultUnlock() { const k = gitKeys(); if (k && k.requestUnlock) k.requestUnlock(); }
+// Seals `token` with the device key, writes it, and opens it back from storage to prove it round-trips. If anything
+// fails the previous record (if any) is put back, so a failed save never destroys a working token. `gen` (optional)
+// is the counter value the caller started with: if a newer save or removal happened meanwhile, nothing is written
+// and false is returned.
+async function gitStoreDevice(winId, token, gen) {
+    const dev = gitDevice();
+    if (!dev) throw new Error('The device key is not available.');
+    const purpose = gitTokenPurpose(winId), key = gitEncKey(winId);
+    const rec = await dev.seal(purpose, { t: token });
+    if (gen !== undefined && (gitTokenGen[winId] || 0) !== gen) return false;
+    const prev = localStorage.getItem(key);
+    try {
+        localStorage.setItem(key, JSON.stringify(rec));
+        const back = await dev.open(purpose, JSON.parse(localStorage.getItem(key)));
+        if (!back || back.t !== token) throw new Error('The stored token did not read back correctly.');
+        return true;
+    } catch (e) {
+        try { if (prev === null) localStorage.removeItem(key); else localStorage.setItem(key, prev); } catch (x) { /* storage is unusable */ }
+        throw e;
+    }
+}
+// A record that nothing on this device can decrypt (browser data was partly cleared, or the record is damaged)
+// cannot be fixed, so it is removed and the person is told to add the token again. A key store that merely cannot
+// be reached right now is NOT treated that way: nothing is deleted, and it is tried again on the next load.
+function gitTokenUnreadable(winId, e) {
+    const code = e && e.code;
+    if (code === 'storage' || code === 'unsupported') {
+        gitTokenProblem[winId] = 'unavailable';
+        gitLog('auth', 'This browser\'s key storage could not be reached, so the saved GitHub token cannot be read in this session', 'error');
+        return;
+    }
+    try { localStorage.removeItem(gitEncKey(winId)); localStorage.removeItem(gitProfileKey(winId)); } catch (x) { /* nothing to remove */ }
+    gitTokenProblem[winId] = 'lost';
+    gitNotify({ id: 'git-token', title: 'GitHub token could not be read', text: 'The saved GitHub token can no longer be decrypted on this device, which usually means this browser\'s site data was partly cleared. Add the token again in the Config tab of Source Control.' });
+    gitLog('auth', 'The saved GitHub token could not be decrypted and was removed; it needs to be added again', 'error');
+}
+// Fills the session cache for a window once per page load: decrypts the saved token, or encrypts a plain-text one.
+function gitHydrateToken(winId) {
+    winId = winId || gitWinId();
+    if (gitTokenLoad[winId]) return gitTokenLoad[winId];
+    // Starts on a later tick on purpose: the body can finish without awaiting anything, and it ends by redrawing the
+    // panel, whose render calls gitHydrateToken() again. The promise has to be recorded before that happens.
+    gitTokenLoad[winId] = Promise.resolve().then(async () => {
+        const gen = gitTokenGen[winId] || 0, current = () => (gitTokenGen[winId] || 0) === gen;
+        try {
+            const dev = gitDevice();
+            if (!dev) return;
+            const raw = localStorage.getItem(gitEncKey(winId));
+            if (raw !== null) {
+                let v;
+                try {
+                    v = await dev.open(gitTokenPurpose(winId), JSON.parse(raw));
+                    if (!v || typeof v.t !== 'string' || !v.t) throw new Error('damaged');
+                } catch (e) { if (current()) gitTokenUnreadable(winId, e); return; }
+                if (current()) gitTokenCache[winId] = v.t;
+            } else {
+                const plain = localStorage.getItem(gitTokenKey(winId));
+                if (plain && await gitStoreDevice(winId, plain, gen)) {
+                    gitTokenCache[winId] = plain;
+                    localStorage.removeItem(gitTokenKey(winId));
+                    gitLog('auth', 'Encrypted the saved GitHub token with this device\'s key (it was stored as plain text)', 'info');
+                }
+            }
+        } catch (e) { /* the token stays where it was and this is tried again on the next load */ }
+        finally { gitTokenLoaded[winId] = true; }
+        gitMoveVaultTokenToDevice();
+        if (winId === gitWinId() && typeof window.renderGitPanel === 'function') { try { window.renderGitPanel(); } catch (e) { /* panel not mounted */ } }
+    });
+    return gitTokenLoad[winId];
+}
+let gitMovingToken = false;
+// Fallback only (no device key): a plain-text token moves into the My Keys vault the next time it is unlocked.
+async function gitMoveTokenToVault() {
+    const k = gitKeys();
+    if (gitMovingToken || !k || !k.isUnlocked()) return;
+    const legacy = gitLegacyPlainToken();
+    if (!legacy) return;
+    gitMovingToken = true;
+    try {
+        if (!gitVaultToken()) await k.setSecret('github-token', legacy);
+        localStorage.removeItem(gitTokenKey());
+        gitLog('auth', 'Moved the saved GitHub token into My Keys (encrypted)', 'info');
+    } catch (e) { /* stays where it was; tried again next unlock */ }
+    finally { gitMovingToken = false; }
+}
+// A token the previous version kept in the My Keys vault moves to the device key, then its vault copy is removed so
+// the token lives in one place. The vault copy is only removed once the device copy is stored and read back, or
+// when a device copy already exists (then the vault copy is the older one).
+async function gitMoveVaultTokenToDevice() {
+    const k = gitKeys(), winId = gitWinId();
+    if (gitMovingToken || !gitDevice() || !k || !k.isUnlocked()) return;
+    gitMovingToken = true;
+    try {
+        await gitHydrateToken(winId);
+        if (gitWinId() !== winId || !k.isUnlocked()) return;
+        const vaultToken = gitVaultToken();
+        if (!vaultToken) return;
+        if (!gitTokenCache[winId]) {
+            if (!(await gitStoreDevice(winId, vaultToken, gitTokenGen[winId] || 0))) return;
+            gitTokenCache[winId] = vaultToken;
+            delete gitTokenProblem[winId];
+        }
+        await k.removeSecret('github-token');
+        gitLog('auth', 'Moved the saved GitHub token from My Keys to this device\'s key, so it no longer needs My Keys to be unlocked', 'info');
+    } catch (e) { /* the copy in My Keys stays; tried again next unlock */ }
+    finally { gitMovingToken = false; }
+}
+// Stores a verified token. Device key first; the My Keys vault is the fallback when the device key cannot be used.
+async function gitSaveToken(token) {
+    const winId = gitWinId(), keys = gitKeys();
+    if (gitDevice()) {
+        gitBumpTokenGen(winId);
+        try {
+            if (await gitStoreDevice(winId, token, gitTokenGen[winId])) {
+                gitTokenCache[winId] = token;
+                delete gitTokenProblem[winId];
+                try { localStorage.removeItem(gitTokenKey(winId)); } catch (e) { /* no plain copy to remove */ }
+                // An older copy in My Keys must not outlive the token it belonged to.
+                if (keys && keys.isUnlocked() && gitVaultToken()) { try { await keys.removeSecret('github-token'); } catch (e) { /* removed next unlock */ } }
+                return 'device';
+            }
+        } catch (e) { /* fall through to My Keys */ }
+    }
+    if (keys && keys.isUnlocked()) {
+        try { await keys.setSecret('github-token', token); }
+        catch (storeErr) { throw new Error('The token is valid but could not be saved to My Keys. Make sure it is unlocked and try again.'); }
+        gitBumpTokenGen(winId); delete gitTokenCache[winId]; delete gitTokenProblem[winId];
+        try { localStorage.removeItem(gitEncKey(winId)); localStorage.removeItem(gitTokenKey(winId)); } catch (e) { /* nothing to remove */ }
+        return 'vault';
+    }
+    gitRequestVaultUnlock();
+    throw new Error('The token is valid, but this browser would not let CodeMini store it encrypted on this device. Unlock My Keys and try again to keep it there instead.');
+}
+window.addEventListener('codemini:vault-state', async () => {
+    if (gitDevice()) await gitMoveVaultTokenToDevice(); else await gitMoveTokenToVault();
+    if (typeof window.renderGitPanel === 'function') { try { window.renderGitPanel(); } catch (e) { /* panel not mounted */ } }
+});
+// Another tab saved or removed this window's token: forget what this page decrypted and read it again.
+window.addEventListener('storage', (e) => {
+    const w = gitWinId();
+    if (e.key !== null && e.key !== gitEncKey(w)) return;
+    gitBumpTokenGen(w); delete gitTokenCache[w]; delete gitTokenProblem[w]; delete gitTokenLoad[w]; delete gitTokenLoaded[w];
+    gitHydrateToken(w);
+});
+gitHydrateToken();
 function gitGetGhProfile() {
     gitMigrateLegacyToken();
     try { const raw = localStorage.getItem(gitProfileKey()); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
@@ -2454,6 +2661,25 @@ function gitDownloadText(filename, text) {
     setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 function gitToast(message) { if (window.showSuccessToast) window.showSuccessToast(message); }
+
+// Sends a notification to Now Island (it shows as a toast while the island is closed). Returns false when the
+// notification system is not there, so a caller can fall back to the plain toast. Never throws.
+function gitNotify(n) {
+    try {
+        if (!window.CodeMiniNotifications) return false;
+        window.CodeMiniNotifications.add(Object.assign(
+            { source: 'Source Control', kind: 'git', actions: ['open-source-control'] },
+            n,
+            { text: gitRedact(String(n.text || '')).slice(0, 400) } // an error message must never carry a token
+        ));
+        return true;
+    } catch (e) { return false; }
+}
+function gitClearNotice(id) { try { if (window.CodeMiniNotifications) window.CodeMiniNotifications.remove(id); } catch (e) {} }
+// One live conflict notice per repository (workspace database).
+function gitNotifyConflict(dbName, title, text, fallbackToast) {
+    if (!gitNotify({ id: 'git-conflict-' + dbName, title, text })) gitToast(fallbackToast);
+}
 
 // --- Source Control log ---------------------------------------------------------
 // One capped, per-database record of what Source Control did (commits, branch
@@ -2657,10 +2883,20 @@ async function gitHubRequest(endpoint, options = {}) {
         }
         const err = new Error(`GitHub API error (${res.status}): ${msg}`);
         err.status = res.status; err.apiMessage = msg;
+        // The SAVED token was refused (a token being tried out from the Config form has tokenOverride and is the
+        // user's own current action, so it is not announced).
+        if (res.status === 401 && !tokenOverride) gitNotifyTokenRejected();
         throw err;
     }
     const data = res.status === 204 ? null : await res.json();
     return withHeaders ? { data, headers: res.headers } : data;
+}
+function gitNotifyTokenRejected() {
+    gitNotify({
+        id: 'git-token',
+        title: 'GitHub rejected your token',
+        text: 'GitHub says the saved token is wrong, expired or revoked, so pushing and pulling will fail. Add a new one in the Config tab of Source Control.'
+    });
 }
 function gitFriendlyError(e) {
     if (!e) return 'Unknown error';
@@ -2690,12 +2926,19 @@ async function gitConnectGitHub() {
     const token = gitFieldValue('gitTokenInput').trim();
     if (!token) { gitSetResult(ui, 'auth', 'error', 'Paste a personal access token first.'); window.renderGitPanel(); return; }
     if (/\s/.test(token)) { gitSetResult(ui, 'auth', 'error', 'A token cannot contain spaces or line breaks.'); window.renderGitPanel(); return; }
+    const keys = gitKeys();
+    // With the device key there is nothing to unlock. Without it the token can only be kept in the My Keys vault.
+    if (!gitDevice() && (!keys || !keys.isUnlocked())) {
+        gitSetResult(ui, 'auth', 'error', 'Unlock My Keys first. Your token is stored encrypted in your vault (you will be asked to create the vault if you have not yet).');
+        window.renderGitPanel(); gitRequestVaultUnlock(); return;
+    }
     ui.busy.auth = true; gitSetResult(ui, 'auth', 'info', 'Verifying token with GitHub...'); window.renderGitPanel();
     try {
         const profile = await gitAuthenticate(token);
-        localStorage.setItem(gitTokenKey(), token);
+        await gitSaveToken(token);
         localStorage.setItem(gitProfileKey(), JSON.stringify(profile));
         gitResetGithubCaches();
+        gitClearNotice('git-token');
         delete ui.drafts.gitTokenInput; ui.sections.replaceToken = false;
         gitSetResult(ui, 'auth', 'success', `Connected as @${profile.login}.`);
         gitAutoClearResult(ui, 'auth');
@@ -2719,23 +2962,33 @@ async function gitVerifyGitHub(opts) {
     try {
         const profile = await gitAuthenticate(token);
         localStorage.setItem(gitProfileKey(), JSON.stringify(profile));
+        gitClearNotice('git-token');
         if (!opts.silent) { gitSetResult(ui, 'auth', 'success', `Token is valid - @${profile.login}.`); gitAutoClearResult(ui, 'auth'); }
         else delete ui.results.auth;
         gitLog('auth', `Verified GitHub token for @${profile.login}`, 'info');
     } catch (e) {
         // A 401 means the saved token is dead: drop the cached profile so the UI stops
         // claiming we're connected. Any other failure (offline, rate limit) keeps it.
-        if (e.status === 401) localStorage.removeItem(gitProfileKey());
+        if (e.status === 401) { localStorage.removeItem(gitProfileKey()); gitNotifyTokenRejected(); }
         gitSetResult(ui, 'auth', 'error', gitFriendlyError(e));
         gitLog('auth', `Token verification failed: ${e.message}`, 'error');
     } finally { ui.busy.auth = false; window.renderGitPanel(); }
 }
 function gitDisconnectGitHub() {
-    const doDisconnect = () => {
+    const doDisconnect = async () => {
         const gh = gitGetGhProfile();
+        const keys = gitKeys();
+        if (gitTokenLocked()) { gitToast('Unlock My Keys to disconnect: the token is stored there.'); gitRequestVaultUnlock(); return; }
+        if (keys && keys.isUnlocked() && gitVaultToken()) {
+            try { await keys.removeSecret('github-token'); } catch (e) { gitToast('Could not remove the token from My Keys.'); return; }
+        }
+        const winId = gitWinId();
+        gitBumpTokenGen(winId); delete gitTokenCache[winId]; delete gitTokenProblem[winId];
+        localStorage.removeItem(gitEncKey(winId));
         localStorage.removeItem(gitTokenKey());
         localStorage.removeItem(gitProfileKey());
         gitResetGithubCaches();
+        gitClearNotice('git-token');
         const ui = gitUi();
         ui.results = {}; ui.sections.replaceToken = false;
         gitLog('auth', `Disconnected GitHub account${gh ? ` @${gh.login}` : ''}`, 'info');
@@ -3026,7 +3279,7 @@ function gitReadRemoteFields(ui) {
 async function gitPushToGitHub() {
     const ui = gitUi();
     if (ui.busy.sync) return;
-    if (!gitGetToken()) { gitSetResult(ui, 'remote', 'error', 'Connect your GitHub account in the Config tab first.'); window.renderGitPanel(); return; }
+    if (!gitGetToken()) { gitSetResult(ui, 'remote', 'error', gitNoTokenMessage()); window.renderGitPanel(); return; }
     const fields = gitReadRemoteFields(ui); if (!fields) return;
     const { ref, branch } = fields;
     const database = db; const dbName = database.name;
@@ -3062,10 +3315,19 @@ async function gitPushToGitHub() {
         gitAutoClearResult(ui, 'remote');
         gitLog('push', `Pushed ${tree.size} file(s) from "${config.currentBranch}" to ${ref.full}@${branch}`, 'success', { repo: ref.full, branch, files: tree.size }, dbName);
         gitToast('Pushed to GitHub');
+        gitClearNotice('git-push-failed');
         gitFetchRemoteTracking(ref, branch, dbName).then(() => window.gitUpdateStatusBranch());
     } catch (e) {
         gitSetResult(ui, 'remote', 'error', `${gitFriendlyError(e)}${done > 1 ? ` (${done - 1} of ${tree.size} file(s) had already been pushed.)` : ''}`);
         gitLog('push', `Push to ${ref.full}@${branch} failed on file ${done}/${tree.size}: ${e.message}`, 'error', { repo: ref.full, branch }, dbName);
+        // A rejected token already has its own notification (from gitHubRequest), so this one is for everything else.
+        if (!(e.status === 401 && !e.noToken)) {
+            gitNotify({
+                id: 'git-push-failed',
+                title: 'Push to GitHub failed',
+                text: `${ref.full}@${branch}: ${gitFriendlyError(e)}${done > 1 ? ` (${done - 1} of ${tree.size} file(s) had already been pushed.)` : ''}`
+            });
+        }
     } finally { ui.busy.sync = false; window.renderGitPanel(); }
 }
 // User-facing "Fetch": checks the remote branch's current state and updates
@@ -3075,7 +3337,7 @@ async function gitPushToGitHub() {
 async function gitFetchOnly() {
     const ui = gitUi();
     if (ui.busy.sync) return;
-    if (!gitGetToken()) { gitSetResult(ui, 'remote', 'error', 'Connect your GitHub account in the Config tab first.'); window.renderGitPanel(); return; }
+    if (!gitGetToken()) { gitSetResult(ui, 'remote', 'error', gitNoTokenMessage()); window.renderGitPanel(); return; }
     const fields = gitReadRemoteFields(ui); if (!fields) return;
     const { ref, branch } = fields;
     const dbName = db.name;
@@ -3099,7 +3361,7 @@ async function gitFetchOnly() {
 async function gitPullFromGitHub() {
     const ui = gitUi();
     if (ui.busy.sync) return;
-    if (!gitGetToken()) { gitSetResult(ui, 'remote', 'error', 'Connect your GitHub account in the Config tab first.'); window.renderGitPanel(); return; }
+    if (!gitGetToken()) { gitSetResult(ui, 'remote', 'error', gitNoTokenMessage()); window.renderGitPanel(); return; }
     if (gitGetPendingMerge(db.name)) { gitSetResult(ui, 'remote', 'error', 'Finish or abort the in-progress merge before pulling.'); window.renderGitPanel(); return; }
     if (gitGetPendingRebase(db.name)) { gitSetResult(ui, 'remote', 'error', 'Finish or abort the in-progress rebase before pulling.'); window.renderGitPanel(); return; }
     const fields = gitReadRemoteFields(ui); if (!fields) return;
@@ -3157,10 +3419,14 @@ async function gitPullFromGitHub() {
             gitAutoClearResult(ui, 'remote');
             gitLog('pull', `Pulled ${blobs.length} file(s) from ${ref.full}@${branch} (${pulledChanges.length} changed)`, 'success', { repo: ref.full, branch, files: blobs.length, changed: pulledChanges.length }, dbName);
             gitToast('Pulled from GitHub');
+            gitClearNotice('git-pull-failed');
             window.gitUpdateStatusBranch();
         } catch (e) {
             gitSetResult(ui, 'remote', 'error', gitFriendlyError(e));
             gitLog('pull', `Pull from ${ref.full}@${branch} failed: ${e.message}`, 'error', { repo: ref.full, branch }, dbName);
+            if (!(e.status === 401 && !e.noToken)) {
+                gitNotify({ id: 'git-pull-failed', title: 'Pull from GitHub failed', text: `${ref.full}@${branch}: ${gitFriendlyError(e)}` });
+            }
         } finally { ui.busy.sync = false; window.renderGitPanel(); }
     };
 
@@ -3509,6 +3775,9 @@ function renderConfigTab(dbName, ui) {
                   : gh.scopes && gh.scopes.length === 0 ? `<div class="git-hint" style="padding:0; margin-top:4px;">Token has no classic scopes (likely a fine-grained token).</div>` : ''}
             </div>
         </div>
+        ${gitTokenLocked() ? `<div class="git-hint" style="margin:8px 0;"><i class="ri-lock-line"></i> Your GitHub token is still in My Keys, which is locked. <a href="#" data-git-action="unlock-keys">Unlock My Keys</a> ${gitDevice() ? 'once and it moves to this device\'s key, so you will not need to unlock it again to push or pull.' : 'to push, pull or use GitHub.'}</div>` : ''}
+        ${gitTokenProblem[gitWinId()] ? `<div class="git-hint" style="margin:8px 0;"><i class="ri-error-warning-line"></i> ${gitEsc(gitNoTokenMessage())}</div>` : ''}
+        ${gitLegacyPlainToken() && (!gitDevice() || gitTokenLoaded[gitWinId()]) ? `<div class="git-hint" style="margin:8px 0;"><i class="ri-error-warning-line"></i> This token is still saved unencrypted in this browser. <a href="#" data-git-action="unlock-keys">Unlock My Keys</a> (or create it) and it will be moved into the vault.</div>` : ''}
         <div class="git-btn-row">
             <button class="git-btn git-btn-secondary" data-git-action="verify-token" ${ui.busy.auth ? 'disabled' : ''}><i class="ri-refresh-line"></i> Re-verify</button>
             <button class="git-btn git-btn-danger" data-git-action="disconnect-github"><i class="ri-logout-box-line"></i> Disconnect</button>
@@ -3523,7 +3792,8 @@ function renderConfigTab(dbName, ui) {
     ` : `
         <div class="git-field-label">GitHub Personal Access Token</div>
         <input type="password" id="gitTokenInput" data-git-keep class="git-input" placeholder="ghp_... or github_pat_..." value="${gitEsc(gitDraft(ui, 'gitTokenInput', token))}">
-        <div class="git-hint">Stored only in this browser, for this window/profile. Needs the "repo" scope (and "workflow" if you push workflow files). <a href="https://github.com/settings/tokens/new?scopes=repo,workflow&description=CodeMini" target="_blank" rel="noopener noreferrer">Create one</a></div>
+        ${gitTokenProblem[gitWinId()] ? `<div class="git-hint"><i class="ri-error-warning-line"></i> ${gitEsc(gitNoTokenMessage())}</div>` : ''}
+        <div class="git-hint">${gitDevice() ? 'Stored encrypted on this device with a key the browser keeps for CodeMini, for this window/profile only. It stays available when My Keys is locked.' : 'Stored encrypted in your My Keys vault, for this window/profile only (unlock the vault to save or use it).'} Needs the "repo" scope (and "workflow" if you push workflow files). <a href="https://github.com/settings/tokens/new?scopes=repo,workflow&description=CodeMini" target="_blank" rel="noopener noreferrer">Create one</a></div>
         <div class="git-btn-row" style="margin-top:8px;"><button class="git-btn" data-git-action="connect-github" ${ui.busy.auth ? 'disabled' : ''}>${ui.busy.auth ? 'Verifying...' : 'Save & Authenticate'}</button></div>
     `;
 
@@ -4068,6 +4338,7 @@ window.renderGitPanel = async function() {
     const database = db;
     const dbName = database.name;
     const uiState = gitUi();
+    gitHydrateToken();
     gitAutoVerifyToken();
     await gitHydrateObjectCache(database);
 
@@ -4165,6 +4436,7 @@ if (!window._gitDelegationBound) {
     window._gitDelegationBound = true;
     document.addEventListener('click', (e) => {
         const el = e.target.closest('[data-git-action]');
+        if (el && el.tagName === 'A') e.preventDefault();
         if (!el) return;
         const sidebar = document.getElementById('sourceControlSidebar');
         if (!sidebar || !sidebar.contains(el)) return;
@@ -4231,6 +4503,7 @@ if (!window._gitDelegationBound) {
             case 'connect-github': gitConnectGitHub(); break;
             case 'verify-token': gitVerifyGitHub(); break;
             case 'disconnect-github': gitDisconnectGitHub(); break;
+            case 'unlock-keys': gitRequestVaultUnlock(); break;
             case 'save-identity': gitSaveCustomIdentity(); break;
             case 'toggle-section': {
                 const ui = gitUi(); const sec = el.dataset.section;

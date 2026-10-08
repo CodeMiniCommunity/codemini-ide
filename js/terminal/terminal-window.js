@@ -122,7 +122,7 @@
                                 termState.folderStack = parsed.cwd || [{ id: 'root', name: 'CodeMini' }];
                                 termState.aliases = parsed.aliases || { 'ted': 'mini', 'nan': 'mini', 'edit': 'mini', 'll': 'ls -l', 'la': 'ls -la', 'cls': 'clear' };
                                 termState.envVars = parsed.envVars || {};
-                                output.innerHTML = parsed.outputHtml || '';
+                                output.innerHTML = CodeMiniEscape.sanitize(parsed.outputHtml || '', { allowStyle: true }); // saved HTML: allowlist it on the way back in
                             } catch (e) {
                                 console.error("Error loading terminal state", e);
                             }
@@ -168,9 +168,12 @@
                     };
 
                     const dbPut = async (fileObj) => {
+                        // Locked records are encrypted on the way out (and a locked record's plain text is never
+                        // written); this must finish before the transaction opens.
+                        const toWrite = window.CodeMiniLock ? await window.CodeMiniLock.seal(fileObj) : fileObj;
                         const { dbInst, tx } = await getIsolatedDbTx('readwrite');
                         return new Promise(resolve => {
-                            tx.objectStore('filesystem').put(fileObj);
+                            tx.objectStore('filesystem').put(toWrite);
                             tx.oncomplete = () => { 
                                 dbInst.close();
                                 triggerSafeUIRefresh(); 
@@ -326,8 +329,14 @@
                                     text: `Enter password to access ${file.name}:`,
                                     inputType: 'password',
                                     submitText: 'Unlock'
-                                }, (pwd) => {
-                                    if (pwd !== file.password) {
+                                }, async (pwd) => {
+                                    let ok = false;
+                                    try {
+                                        ok = await window.CodeMiniLock.unlock(file, pwd, dbPut);
+                                        // Commands read file.content, so put the plain text on this in-memory copy only.
+                                        if (ok) await window.CodeMiniLock.reveal(file);
+                                    } catch (e) { ok = false; }
+                                    if (!ok) {
                                         printTerm(`<span style="color: var(--term-red);">bash: ${file.name}: Permission denied (Incorrect password)</span>`, true);
                                         if(typeof closeGenModal === 'function') closeGenModal();
                                         resolve(false);
@@ -351,12 +360,15 @@
                                 }
                             } else {
                                 const pwd = prompt(`Enter password to access ${file.name}:`);
-                                if (pwd !== file.password) {
-                                    printTerm(`<span style="color: var(--term-red);">bash: ${file.name}: Permission denied</span>`, true);
-                                    resolve(false);
-                                } else {
-                                    resolve(true);
-                                }
+                                (async () => {
+                                    let ok = false;
+                                    try {
+                                        ok = !!pwd && await window.CodeMiniLock.unlock(file, pwd, dbPut);
+                                        if (ok) await window.CodeMiniLock.reveal(file);
+                                    } catch (e) { ok = false; }
+                                    if (!ok) printTerm(`<span style="color: var(--term-red);">bash: ${file.name}: Permission denied</span>`, true);
+                                    resolve(ok);
+                                })();
                             }
                         });
                     };

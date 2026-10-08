@@ -91,7 +91,7 @@ function _renderTreeNode(node, depth, pathPrefix) {
         <div class="archive-tree-row" style="padding-left: ${14 + depth * 18}px;" onclick="window.toggleArchiveTreeFolder('${childId}', this)">
             <i class="ri-arrow-right-s-line archive-tree-caret"></i>
             <i class="ri-folder-2-line" style="color: var(--icon-folder, #dcb67a);"></i>
-            <span>${folderName}</span>
+            <span>${CodeMiniEscape.html(folderName)}</span>
         </div>
         <div class="archive-tree-children" id="${childId}">
             ${_renderTreeNode(node.folders[folderName], depth + 1, pathPrefix + folderName + '/')}
@@ -101,9 +101,9 @@ function _renderTreeNode(node, depth, pathPrefix) {
         const icon = (typeof getFileIconHTML === 'function') ? getFileIconHTML(name) : '<i class="ri-file-line file-icon"></i>';
         const size = entry.size !== undefined ? entry.size : (entry.getSize ? entry.getSize() : undefined);
         html += `
-        <div class="archive-tree-row" style="padding-left: ${14 + (depth + 1) * 18}px;" onclick="window.openArchiveEntry(this)" data-entry-path="${pathPrefix}${name}">
+        <div class="archive-tree-row" style="padding-left: ${14 + (depth + 1) * 18}px;" onclick="window.openArchiveEntry(this)" data-entry-path="${CodeMiniEscape.html(pathPrefix + name)}">
             ${icon}
-            <span>${name}</span>
+            <span>${CodeMiniEscape.html(name)}</span>
             <span class="archive-tree-size">${_formatBytes(size)}</span>
         </div>`;
     });
@@ -187,7 +187,7 @@ window.initArchiveViewer = async function(fileId, targetId) {
     if (!treeEl) return;
 
     const fail = (msg) => {
-        if (loadingEl) loadingEl.innerHTML = `<i class="ri-error-warning-line" style="font-size: 26px; color: var(--color-danger);"></i><span style="text-align:center; max-width: 320px; line-height: 1.5;">${msg}</span>`;
+        if (loadingEl) loadingEl.innerHTML = `<i class="ri-error-warning-line" style="font-size: 26px; color: var(--color-danger);"></i><span style="text-align:center; max-width: 320px; line-height: 1.5;">${CodeMiniEscape.html(msg)}</span>`;
     };
 
     const result = await _readArchiveEntries(fileId);

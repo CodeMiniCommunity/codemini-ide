@@ -1334,7 +1334,7 @@ json.dumps({
                 if (payload.plots && payload.plots.length > 0) {
                     payload.plots.forEach(b64 => {
                         const imgWrapper = document.createElement('div');
-                        imgWrapper.innerHTML = `<br><img src="data:image/png;base64,${b64}" style="max-width:100%; border:1px solid var(--border-color); border-radius:1px; margin-top:8px; background:var(--bg-white); display:block;">`;
+                        imgWrapper.innerHTML = `<br><img src="data:image/png;base64,${String(b64).replace(/[^A-Za-z0-9+/=]/g, '')}" style="max-width:100%; border:1px solid var(--border-color); border-radius:1px; margin-top:8px; background:var(--bg-white); display:block;">`;
                         out.appendChild(imgWrapper);
                     });
                 }
@@ -1398,7 +1398,7 @@ json.dumps({
                         out.appendChild(span);
                     });
                 } catch (err) {
-                    out.innerHTML = `<span style="color:var(--color-danger);">${err.message}</span>`;
+                    out.innerHTML = `<span style="color:var(--color-danger);">${CodeMiniEscape.html(err.message)}</span>`;
                 } finally {
                     shelter.purge();
                     
@@ -1416,7 +1416,7 @@ json.dumps({
                                 const b64 = btoa(binary);
                                 
                                 const imgWrapper = document.createElement('div');
-                                imgWrapper.innerHTML = `<br><img src="data:image/png;base64,${b64}" style="max-width:100%; border:1px solid var(--border-color); border-radius:1px; margin-top:8px; background:var(--bg-white); display:block;">`;
+                                imgWrapper.innerHTML = `<br><img src="data:image/png;base64,${String(b64).replace(/[^A-Za-z0-9+/=]/g, '')}" style="max-width:100%; border:1px solid var(--border-color); border-radius:1px; margin-top:8px; background:var(--bg-white); display:block;">`;
                                 out.appendChild(imgWrapper);
                                 
                                 await webr.FS.unlink('/tmp/' + f);
@@ -1680,20 +1680,26 @@ json.dumps({
         }
         
         const allCells = pane.querySelectorAll('.cell');
+        const runStart = Date.now(), runWin = (typeof _getWinId === 'function') ? _getWinId() : null;
+        let runStopped = false;
         for (let i = 0; i < allCells.length; i++) {
-            if (window.kernelInterrupted) break; pane.querySelectorAll('.cell').forEach(cl => cl.classList.remove('active')); allCells[i].classList.add('active'); await runCell(allCells[i], pane);
+            if (window.kernelInterrupted) { runStopped = true; break; } pane.querySelectorAll('.cell').forEach(cl => cl.classList.remove('active')); allCells[i].classList.add('active'); await runCell(allCells[i], pane);
         }
+        if (window.notifyNotebookRunDone) window.notifyNotebookRunDone(pane, runStart, runWin, runStopped);
         return;
     }
 
     if (e.target.closest('.tb-run-all-no-restart')) {
         const allCells = pane.querySelectorAll('.cell');
+        const runStart = Date.now(), runWin = (typeof _getWinId === 'function') ? _getWinId() : null;
+        let runStopped = false;
         for (let i = 0; i < allCells.length; i++) {
-            if (window.kernelInterrupted) break; 
+            if (window.kernelInterrupted) { runStopped = true; break; } 
             pane.querySelectorAll('.cell').forEach(cl => cl.classList.remove('active')); 
             allCells[i].classList.add('active'); 
             await runCell(allCells[i], pane);
         }
+        if (window.notifyNotebookRunDone) window.notifyNotebookRunDone(pane, runStart, runWin, runStopped);
         return;
     }
 

@@ -431,6 +431,7 @@
                 <i class="ri-grid-line hide-on-mobile" id="lpToggleGrid" title="Toggle Grid Overlay"></i>
             </div>
             <div class="lp-status-right">
+                <span id="lpIsolation" style="display:none; cursor: pointer; padding: 6px 8px;"></span>
                 <span id="lpCurrentFileLabel">preview</span>
                 <span id="lpWordCount" style="color: var(--accent-blue); font-weight: bold;"></span>
             </div>
@@ -499,6 +500,60 @@
     const lpToggleGrid = document.getElementById('lpToggleGrid');
 
     const lpCurrentFileLabel = document.getElementById('lpCurrentFileLabel');
+    // Whether previews are running isolated. Static strings only.
+    const lpIsolation = document.getElementById('lpIsolation');
+    function renderIsolationBadge() {
+        if (!lpIsolation) return;
+        const st = window.CodeMiniRunner ? window.CodeMiniRunner.status() : 'unknown';
+        const look = {
+            isolated: ['ri-shield-check-line', 'var(--color-success, #3fb950)', 'Isolated: this preview runs on a separate origin and cannot read CodeMini\'s storage or call its functions.'],
+            fallback: ['ri-error-warning-line', 'var(--color-warning, #d29922)', 'Not isolated: the preview runner could not be used, so this preview runs inside the app\'s own origin.' + (window.CodeMiniRunner && window.CodeMiniRunner.lastError() ? ' Reason: ' + window.CodeMiniRunner.lastError() : '')],
+            off: ['ri-error-warning-line', 'var(--text-muted)', 'Isolation is switched off (codemini_runner = off): previews run inside the app\'s own origin.'],
+            unavailable: ['ri-error-warning-line', 'var(--text-muted)', 'Isolation is not configured: previews run inside the app\'s own origin.']
+        }[st];
+        if (!look) { lpIsolation.style.display = 'none'; return; }
+        lpIsolation.textContent = '';
+        const badgeIcon = document.createElement('i');
+        badgeIcon.className = look[0]; badgeIcon.style.color = look[1];
+        lpIsolation.appendChild(badgeIcon);
+        lpIsolation.title = look[2];
+        lpIsolation.style.display = '';
+    }
+    // The explanation is shown INSIDE the preview (a toast would sit underneath this full-screen panel on a phone).
+    function isolationNoteText() {
+        const R = window.CodeMiniRunner, d = R ? R.diagnostics() : null;
+        if (!d) return 'The preview runner is not loaded.';
+        const head = { isolated: 'Isolated: this preview runs on a separate origin and cannot read CodeMini\'s storage or call its functions.',
+            fallback: 'Not isolated: the preview runner could not be used, so this preview runs inside the app\'s own origin and can read its storage.',
+            off: 'Isolation is switched off (codemini_runner = off).', unavailable: 'Isolation is not configured.' }[d.status] || 'Isolation status is not known yet. Open a preview first.';
+        return [head, d.lastError ? 'Reason: ' + d.lastError : '', 'Runner: ' + d.runner, 'App: ' + d.app, 'Online: ' + d.online].filter(Boolean).join('\n');
+    }
+    function toggleIsolationNote(force) {
+        const host = document.getElementById('livePreviewContainer');
+        if (!host) return;
+        let note = document.getElementById('lpIsolationNote');
+        if (!note) {
+            note = document.createElement('div');
+            note.id = 'lpIsolationNote';
+            note.style.cssText = 'position:absolute; left:8px; right:8px; bottom:56px; z-index:50; display:none; background:#1b1b22; color:#f2f2f2; border:1px solid #444; border-radius:8px; padding:10px 12px; font-size:13px; line-height:1.45; box-shadow:0 4px 18px rgba(0,0,0,.45);';
+            const body = document.createElement('div'); body.style.cssText = 'white-space:pre-wrap; word-break:break-word;';
+            const row = document.createElement('div'); row.style.cssText = 'display:flex; gap:8px; justify-content:flex-end; margin-top:8px;';
+            const mk = (label, fn) => { const b = document.createElement('button'); b.textContent = label; b.style.cssText = 'background:#2c2c36; color:#f2f2f2; border:1px solid #555; border-radius:6px; padding:6px 12px; font-size:13px;'; b.addEventListener('click', fn); return b; };
+            row.appendChild(mk('Retry isolation', () => { if (window.CodeMiniRunner) window.CodeMiniRunner.retryNow(); note.style.display = 'none'; const r = document.getElementById('lpRefreshBtn'); if (r) r.click(); }));
+            row.appendChild(mk('Close', () => { note.style.display = 'none'; }));
+            note.appendChild(body); note.appendChild(row); host.appendChild(note);
+        }
+        const open = typeof force === 'boolean' ? force : note.style.display === 'none';
+        if (open) note.firstChild.textContent = isolationNoteText();
+        note.style.display = open ? '' : 'none';
+    }
+    let isolationNoteAutoShown = false;
+    window.addEventListener('codemini:runner-status', () => {
+        renderIsolationBadge();
+        // A silent downgrade should not stay silent: say so once per page load.
+        if (window.CodeMiniRunner && window.CodeMiniRunner.status() === 'fallback' && !isolationNoteAutoShown) { isolationNoteAutoShown = true; toggleIsolationNote(true); }
+    });
+    if (lpIsolation) lpIsolation.addEventListener('click', () => toggleIsolationNote());
     const lpWordCount = document.getElementById('lpWordCount');
 
     // Reflect the persisted global reload-mode preference in the settings panel's
@@ -603,20 +658,35 @@
         applyDockState(state);
     }
 
+    // Preview isolation. When the CodeMini runner (a separate origin, see runner/ and runner-client.js) is connected,
+    // every URL a previewed page loads is minted BY THE RUNNER, because a blob: URL only works for pages of the origin
+    // that made it. Otherwise (runner unreachable, or isolation switched off) the old same-origin blobs are used.
+    const cmFrame = () => document.getElementById('lpIframe');
+    const cmRunnerOn = () => !!(window.CodeMiniRunner && window.CodeMiniRunner.active(cmFrame()));
+    async function cmMint(blob) {
+        return cmRunnerOn() ? await window.CodeMiniRunner.mint(cmFrame(), blob) : URL.createObjectURL(blob);
+    }
+    // Runner URLs are released through the runner, local ones directly; the URL itself says which.
+    function cmRevoke(url) {
+        if (!url) return;
+        if (window.CodeMiniRunner && window.CodeMiniRunner.owns(url)) window.CodeMiniRunner.revoke(cmFrame(), [url]);
+        else URL.revokeObjectURL(url);
+    }
+
     // STRICT ISOLATION API FOR WINDOW CONTEXT SWAPS
     window.forceClosePreview = function(winId) {
         const state = previewStateRegistry[winId];
         if (!state) return;
         
-        Object.values(state.activeObjectUrls || {}).forEach(url => URL.revokeObjectURL(url));
+        Object.values(state.activeObjectUrls || {}).forEach(cmRevoke);
         state.activeObjectUrls = {};
-        if (state._lastDocUrl) { URL.revokeObjectURL(state._lastDocUrl); state._lastDocUrl = null; }
+        if (state._lastDocUrl) { cmRevoke(state._lastDocUrl); state._lastDocUrl = null; }
         if (state._pendingRevokeUrls) {
             // Safety net for the abort case described where oldDocUrl is
             // created above (renderPreviewContent) - a URL can land here
             // without ever reaching its own onload-driven revoke if a window
             // switch/close cut its navigation short first.
-            state._pendingRevokeUrls.forEach(url => URL.revokeObjectURL(url));
+            state._pendingRevokeUrls.forEach(cmRevoke);
             state._pendingRevokeUrls.clear();
         }
         state.navHistory = [];
@@ -720,6 +790,11 @@
     // 5. Injected Script (Console, Network, Navigations, Eval, Inspector, Edit, Grid, Storage Manager)
     const injectedInterceptorsBody = `
         <script>
+            // The "in-place rewrite" reload mode (document.open + write) runs this script again in the SAME window, where
+            // the patches below are still installed: wrapping console/fetch/XHR a second time would log everything
+            // twice. They are installed once per window; the listeners and state AFTER this block are not, because
+            // document.open() erases the page's event listeners and they have to be registered again.
+            if (!window.__cmShimInstalled) { window.__cmShimInstalled = true;
             ['log', 'error', 'warn', 'info'].forEach(method => {
                 const original = console[method];
                 console[method] = function(...args) {
@@ -1063,7 +1138,8 @@
                 } catch (e) {}
             })();
 
-            let lastErrorTracker = "";
+            } // end of the install-once block
+            var lastErrorTracker = ""; // var, not let: a second run in the same window must not throw on redeclaration
             window.onerror = function(msg, url, line, col, error) {
                 const errHash = msg + line + col;
                 if (lastErrorTracker !== errHash) {
@@ -1079,9 +1155,9 @@
                     window.parent.postMessage({ type: 'navigate', path: a.getAttribute('href') }, '*');
                 }
             });
-            let _inspectorActive = false;
-            let _lastInspectedEl = null; // currently hovered (or locked) element being outlined
-            let _lockedEl = null; // non-null while locked; hover updates are ignored until unlocked
+            var _inspectorActive = false;
+            var _lastInspectedEl = null; // currently hovered (or locked) element being outlined
+            var _lockedEl = null; // non-null while locked; hover updates are ignored until unlocked
 
             function cmGenerateSelector(el) {
                 if (!el || el.nodeType !== 1) return '';
@@ -1883,7 +1959,7 @@
         const failed = [];
         const importMapImports = {};
 
-        candidateFiles.forEach(file => {
+        for (const file of candidateFiles) {
             const fileExt = file.name.split('.').pop().toLowerCase();
             // Only .ts is excluded from JSX/React support: it's the one extension where
             // JSX syntax would actually conflict with something real (an old-style
@@ -1903,14 +1979,14 @@
                     plugins: [makeImportRewritePlugin(file, pathMap, aliasConfig, depsOut)]
                 });
                 const blob = new Blob([out.code], { type: 'text/javascript' });
-                const url = URL.createObjectURL(blob);
+                const url = await cmMint(blob);
                 state.activeObjectUrls[file.id] = url;
                 state.moduleFileIds.add(file.id);
                 importMapImports[`cm:module:${file.id}`] = url;
             } catch (e) {
                 failed.push({ name: file.name, error: (e && e.message) ? e.message : String(e) });
             }
-        });
+        }
 
         // A "local dep" isn't always a candidate file that got transpiled above - it might
         // be a plain classic .js file (no import/export of its own - e.g. something fetched
@@ -1965,7 +2041,7 @@
 
     async function refreshBlobMap(files) {
         const state = getPreviewState();
-        Object.values(state.activeObjectUrls).forEach(url => URL.revokeObjectURL(url));
+        Object.values(state.activeObjectUrls).forEach(cmRevoke);
         state.activeObjectUrls = {};
         state.moduleFileIds = new Set();
         state.jsImportedCssFileIds = new Set();
@@ -1990,7 +2066,7 @@
         // Non-module files first (CSS/JSON/images/plain classic-script JS/etc.) so
         // anything a TS/TSX/JSX file imports (a stylesheet, a JSON data file, ...)
         // already has a real blob URL by the time the module graph below needs it.
-        plainFiles.forEach(f => {
+        for (const f of plainFiles) {
             const ext = f.name.split('.').pop().toLowerCase();
 
             // Linked local dependencies (CSS/JS/HTML/JSON) are text and may be open in Monaco with
@@ -2022,9 +2098,9 @@
                     }
                     blob = new Blob([contentToUse], { type: mimeType });
                 }
-                state.activeObjectUrls[f.id] = URL.createObjectURL(blob);
+                state.activeObjectUrls[f.id] = await cmMint(blob);
             } catch(e) {}
-        });
+        }
 
         if (candidateFiles.length > 0) {
             const pathMap = {};
@@ -2127,21 +2203,21 @@
         if (!isRoot) wrapper.classList.add('tree-node');
 
         if (obj === null) {
-            wrapper.innerHTML = `${keyName ? `<span class="tree-key">${keyName}:</span> ` : ''}<span class="tree-null">null</span>`;
+            wrapper.innerHTML = `${keyName ? `<span class="tree-key">${escapeHtml(keyName)}:</span> ` : ''}<span class="tree-null">null</span>`;
             return wrapper;
         }
 
         const type = typeof obj;
         if (type === 'string') {
-            wrapper.innerHTML = `${keyName ? `<span class="tree-key">${keyName}:</span> ` : ''}<span class="tree-string">"${obj.replace(/</g, '&lt;').replace(/>/g, '&gt;')}"</span>`;
+            wrapper.innerHTML = `${keyName ? `<span class="tree-key">${escapeHtml(keyName)}:</span> ` : ''}<span class="tree-string">"${obj.replace(/</g, '&lt;').replace(/>/g, '&gt;')}"</span>`;
             return wrapper;
         }
         if (type === 'number') {
-            wrapper.innerHTML = `${keyName ? `<span class="tree-key">${keyName}:</span> ` : ''}<span class="tree-number">${obj}</span>`;
+            wrapper.innerHTML = `${keyName ? `<span class="tree-key">${escapeHtml(keyName)}:</span> ` : ''}<span class="tree-number">${obj}</span>`;
             return wrapper;
         }
         if (type === 'boolean') {
-            wrapper.innerHTML = `${keyName ? `<span class="tree-key">${keyName}:</span> ` : ''}<span class="tree-boolean">${obj}</span>`;
+            wrapper.innerHTML = `${keyName ? `<span class="tree-key">${escapeHtml(keyName)}:</span> ` : ''}<span class="tree-boolean">${obj}</span>`;
             return wrapper;
         }
 
@@ -2152,7 +2228,7 @@
 
             const caret = document.createElement('span');
             caret.className = 'tree-caret';
-            caret.innerHTML = `${keyName ? `<span class="tree-key">${keyName}:</span> ` : ''}${summary}`;
+            caret.innerHTML = `${keyName ? `<span class="tree-key">${escapeHtml(keyName)}:</span> ` : ''}${summary}`;
             
             const nested = document.createElement('div');
             nested.className = 'tree-nested';
@@ -2171,7 +2247,7 @@
             return wrapper;
         }
 
-        wrapper.innerHTML = `${keyName ? `<span class="tree-key">${keyName}:</span> ` : ''}<span>${String(obj)}</span>`;
+        wrapper.innerHTML = `${keyName ? `<span class="tree-key">${escapeHtml(keyName)}:</span> ` : ''}<span>${escapeHtml(String(obj))}</span>`;
         return wrapper;
     }
 
@@ -2332,12 +2408,16 @@ $_SERVER['REMOTE_ADDR'] = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
             const trustFrame = document.getElementById('lpIframe');
             if (trustFrame) {
                 trustFrame.onload = null;
+                trustFrame.dataset.cmRunner = ''; // the restricted notice is a plain srcdoc, not the runner
                 trustFrame.removeAttribute('src');
                 trustFrame.srcdoc = window.WorkspaceTrust.restrictedPreviewHtml();
             }
             lpLoader.classList.remove('show');
             return;
         }
+        // Connect the isolated runner (or fall back to same-origin previews) BEFORE anything is built, since the
+        // URLs the page will load have to come from whichever one is in use.
+        if (window.CodeMiniRunner) await window.CodeMiniRunner.ensure(document.getElementById('lpIframe'));
         const currentWinId = localStorage.getItem('codemini_active_window') || 'win_default';
         const state = getPreviewState();
 
@@ -2423,9 +2503,11 @@ $_SERVER['REMOTE_ADDR'] = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
                     <textarea id="raw-md" style="display:none;">${escapedContent}</textarea>
                     <div id="content"></div>
                     <script>
+                        // Raw HTML inside Markdown is allowlisted here (this page is same-origin with the app).
+                        const __cmSanitize = ${CodeMiniEscape.sanitize.toString()};
                         marked.use({ gfm: true, breaks: true });
                         const rawMdText = document.getElementById('raw-md').value;
-                        document.getElementById('content').innerHTML = marked.parse(rawMdText);
+                        document.getElementById('content').innerHTML = __cmSanitize(marked.parse(rawMdText));
                     </script>
                 </body></html>`;
         } else if (ext === 'json') {
@@ -2675,7 +2757,8 @@ $_SERVER['REMOTE_ADDR'] = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
         const lpIframe = document.getElementById('lpIframe');
         const reloadMode = getReloadMode();
 
-        if (reloadMode === 'legacy') {
+        let legacyDone = false;
+        if (reloadMode === 'legacy' && !cmRunnerOn()) {
             // Legacy path: rewrite the existing iframe document in place via
             // document.write(). Kept as an opt-in fallback (Settings panel) for any
             // preview content that turns out to depend on the old same-window reuse
@@ -2690,7 +2773,21 @@ $_SERVER['REMOTE_ADDR'] = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
             if (state.layoutDebugEnabled) lpIframe.contentWindow.postMessage({ type: 'toggle-layout-debug', enabled: true }, '*');
             if (state.editModeEnabled) lpIframe.contentWindow.postMessage({ type: 'toggle-edit', enabled: true }, '*');
             if (state.gridEnabled) lpIframe.contentWindow.postMessage({ type: 'toggle-grid', enabled: true }, '*');
-        } else {
+            legacyDone = true;
+        } else if (reloadMode === 'legacy') {
+            // Isolated: the app cannot touch the frame's document, but the runner shell shares the page's origin and can
+            // do the same in-place rewrite. If nothing is showing yet (first render), it says so and we navigate below.
+            try {
+                await window.CodeMiniRunner.rewrite(lpIframe, finalHtml);
+                lpLoader.classList.remove('show'); lpLoader.title = '';
+                if (state.inspectorEnabled) lpIframe.contentWindow.postMessage({ type: 'toggle-inspector', enabled: true }, '*');
+                if (state.layoutDebugEnabled) lpIframe.contentWindow.postMessage({ type: 'toggle-layout-debug', enabled: true }, '*');
+                if (state.editModeEnabled) lpIframe.contentWindow.postMessage({ type: 'toggle-edit', enabled: true }, '*');
+                if (state.gridEnabled) lpIframe.contentWindow.postMessage({ type: 'toggle-grid', enabled: true }, '*');
+                legacyDone = true;
+            } catch (e) { try { console.info('[CodeMini] In-place rewrite not possible, navigating instead: ' + (e && e.message)); } catch (x) { /* no console */ } }
+        }
+        if (!legacyDone) {
             // Default path: a real navigation (fresh Blob URL) instead of
             // document.write() into the existing window. document.write() rewrites
             // the current document in place - it does NOT reliably tear down the
@@ -2705,7 +2802,7 @@ $_SERVER['REMOTE_ADDR'] = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
             // effective location.
             const oldDocUrl = state._lastDocUrl;
             const blob = new Blob([finalHtml], { type: 'text/html' });
-            const docUrl = URL.createObjectURL(blob);
+            const docUrl = await cmMint(blob);
             state._lastDocUrl = docUrl;
             // Tracked separately from state._lastDocUrl (which now points at
             // the new URL) so forceClosePreview can still find and revoke
@@ -2719,7 +2816,7 @@ $_SERVER['REMOTE_ADDR'] = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
                 state._pendingRevokeUrls.add(oldDocUrl);
             }
 
-            lpIframe.onload = function() {
+            const afterLoad = function() {
                 lpLoader.classList.remove('show');
                 lpLoader.title = '';
                 // Re-inject states if enabled - deferred until the new document has
@@ -2731,11 +2828,23 @@ $_SERVER['REMOTE_ADDR'] = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
                 // Old document URL only gets revoked once the new one has actually
                 // taken over the iframe - revoking too early can abort a slow-loading navigation.
                 if (oldDocUrl) {
-                    URL.revokeObjectURL(oldDocUrl);
+                    cmRevoke(oldDocUrl);
                     if (state._pendingRevokeUrls) state._pendingRevokeUrls.delete(oldDocUrl);
                 }
             };
-            lpIframe.src = docUrl;
+            if (cmRunnerOn()) {
+                // The page loads inside the runner's own frame; the runner tells us when it has.
+                lpIframe.onload = null;
+                try { await window.CodeMiniRunner.show(lpIframe, docUrl); afterLoad(); }
+                catch (e) {
+                    // The runner is there but could not show the page: use the same-origin preview rather than a blank one.
+                    window.CodeMiniRunner.fail(lpIframe, e && e.message);
+                    return renderPreviewContent(file, rawContent, true); // true: already in the history, do not add it twice
+                }
+            } else {
+                lpIframe.onload = afterLoad;
+                lpIframe.src = docUrl;
+            }
         }
 
         lpIframe.dataset.rawHtml = encodeURIComponent(finalHtml);
@@ -3082,7 +3191,7 @@ $_SERVER['REMOTE_ADDR'] = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
                 const pathMap = buildVirtualPathTree(files); 
                 
                 if(isHardReload) {
-                    Object.values(state.activeObjectUrls).forEach(url => URL.revokeObjectURL(url));
+                    Object.values(state.activeObjectUrls).forEach(cmRevoke);
                     state.activeObjectUrls = {};
                     const needsCompile = files.some(f => f.type === 'file' && f.content && ['ts', 'tsx', 'jsx'].includes(f.name.split('.').pop().toLowerCase()));
                     lpLoader.title = needsCompile ? 'Compiling...' : 'Loading preview...';
@@ -3109,10 +3218,16 @@ $_SERVER['REMOTE_ADDR'] = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
     lpPopOutBtn.addEventListener('click', () => {
         const lpIframe = document.getElementById('lpIframe');
         if (!lpIframe || !lpIframe.dataset.rawHtml) return;
+        if (cmRunnerOn()) {
+            // The page's files are runner URLs, and a popped-out copy would have to run inside this app's own origin.
+            if (window.showToast) window.showToast('Pop-out is unavailable while previews are isolated.');
+            return;
+        }
         const html = decodeURIComponent(lpIframe.dataset.rawHtml);
         const blob = new Blob([html], { type: 'text/html' });
         const url = URL.createObjectURL(blob);
-        window.open(url, '_blank');
+        // noopener: the popped-out page must not get window.opener (it could navigate or inspect this tab).
+        window.open(url, '_blank', 'noopener');
         setTimeout(() => URL.revokeObjectURL(url), 5000);
     });
 
@@ -3195,6 +3310,9 @@ $_SERVER['REMOTE_ADDR'] = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
         const state = getPreviewState();
         const data = event.data;
         if (!data) return;
+        // Runner control traffic is handled by runner-client.js; only the page messages it re-dispatches (untrusted
+        // events, same shape as before) continue below.
+        if (event.isTrusted && data.cmRunner === 1) return;
 
         if (data.type === 'console') {
             const entry = document.createElement('div');
@@ -3301,7 +3419,7 @@ $_SERVER['REMOTE_ADDR'] = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
                     <div style="display:flex; justify-content:space-between; width:100%; margin-bottom: 2px;">
                         <div style="display:flex; align-items:center; gap:5px;"><i class="ri-error-warning-line" style="color: var(--term-yellow); margin-top:1px;"></i> <span style="font-weight:600;">System</span></div>
                     </div>
-                    <div style="padding-left: 18px;">404: File "${targetPath}" not found in current directory context.</div>
+                    <div style="padding-left: 18px;">404: File "${CodeMiniEscape.html(targetPath)}" not found in current directory context.</div>
                 `;
                 lpConsoleContent.appendChild(entry);
             }
@@ -3558,7 +3676,7 @@ $_SERVER['REMOTE_ADDR'] = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
             const isExpanded = state.networkExpandedIds.has(e.reqId);
 
             html += `<div class="net-req${isExpanded ? ' net-expanded' : ''}" data-req-id="${escapeHtml(e.reqId)}">
-                <div class="net-req-row" onclick="window.toggleNetworkExpand('${escapeHtml(e.reqId)}')">
+                <div class="net-req-row" onclick="window.toggleNetworkExpand(${escapeHtml(JSON.stringify(String(e.reqId)))})">
                     <i class="ri-arrow-right-s-line net-caret"></i>
                     <div class="net-status-dot ${dotClass}"></div>
                     <div class="net-method">${escapeHtml(e.method)}</div>
@@ -3600,7 +3718,7 @@ $_SERVER['REMOTE_ADDR'] = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
         }
 
         let html = `<div class="net-detail-toolbar">
-            <i class="ri-file-copy-line" onclick="window.copyNetworkCurl('${escapeHtml(entry.reqId)}')" title="Copy as cURL"></i>
+            <i class="ri-file-copy-line" onclick="window.copyNetworkCurl(${escapeHtml(JSON.stringify(String(entry.reqId)))})" title="Copy as cURL"></i>
         </div>`;
 
         if (entry.status === 'error') {
@@ -3745,7 +3863,7 @@ $_SERVER['REMOTE_ADDR'] = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
                     html += `<div class="res-item sm-item expandable" data-db-name="${escapeHtml(e.key)}" data-expand-id="${escapeHtml(expandId)}" onclick="window.toggleIdbExpand(this, event)">
                         <div class="sm-key-main"><i class="ri-arrow-right-s-line sm-caret"></i><i class="ri-database-2-line" style="color:var(--icon-gray);"></i><span class="sm-key-name">${escapeHtml(e.key)}</span>${originTag(e.origin)}</div>
                         <div class="sm-key-actions">
-                            <i class="ri-delete-bin-line" onclick="event.stopPropagation(); window.manageStorage('delete', 'idb', '${escapeHtml(e.key)}')" title="Delete Database" style="cursor:pointer; color:var(--color-danger);"></i>
+                            <i class="ri-delete-bin-line" onclick="event.stopPropagation(); window.manageStorage('delete', 'idb', ${escapeHtml(JSON.stringify(String(e.key)))})" title="Delete Database" style="cursor:pointer; color:var(--color-danger);"></i>
                         </div>
                     </div>
                     <div class="sm-expand-panel"></div>`;
@@ -3763,10 +3881,10 @@ $_SERVER['REMOTE_ADDR'] = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
                             ${originTag(e.origin)}
                         </div>
                         <div class="sm-key-actions">
-                            <i class="ri-file-copy-line" onclick="event.stopPropagation(); window.copyStorageValue(this, '${escapeHtml(e.key)}')" title="Copy Value" style="cursor:pointer; color:var(--icon-gray);"></i>
+                            <i class="ri-file-copy-line" onclick="event.stopPropagation(); window.copyStorageValue(this, ${escapeHtml(JSON.stringify(String(e.key)))})" title="Copy Value" style="cursor:pointer; color:var(--icon-gray);"></i>
                             <i class="ri-pencil-line" onclick="event.stopPropagation(); window.editStorageValue(this)" title="Edit Value" style="cursor:pointer; color:var(--accent-blue);"></i>
                             <i class="ri-price-tag-3-line" onclick="event.stopPropagation(); window.renameStorageKey(this)" title="Rename Key" style="cursor:pointer; color:var(--accent-blue);"></i>
-                            <i class="ri-delete-bin-line" onclick="event.stopPropagation(); window.manageStorage('delete', '${typeKey}', '${escapeHtml(e.key)}')" title="Delete Key" style="cursor:pointer; color:var(--color-danger);"></i>
+                            <i class="ri-delete-bin-line" onclick="event.stopPropagation(); window.manageStorage('delete', '${typeKey}', ${escapeHtml(JSON.stringify(String(e.key)))})" title="Delete Key" style="cursor:pointer; color:var(--color-danger);"></i>
                         </div>
                     </div>
                     <div class="sm-expand-panel"></div>`;
@@ -4140,13 +4258,14 @@ $_SERVER['REMOTE_ADDR'] = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
                     // a fresh blob instead of reloading the whole page.
                     const oldUrl = state.activeObjectUrls[fileId];
                     const blob = new Blob([newContent], { type: 'text/css' });
-                    const newUrl = URL.createObjectURL(blob);
-                    state.activeObjectUrls[fileId] = newUrl;
-                    const iframe = document.getElementById('lpIframe');
-                    if (iframe && iframe.contentWindow) {
-                        iframe.contentWindow.postMessage({ type: 'swap-stylesheet', oldUrl, newUrl }, '*');
-                    }
-                    setTimeout(() => URL.revokeObjectURL(oldUrl), 2000); // grace period for the swap to land
+                    cmMint(blob).then(newUrl => {
+                        state.activeObjectUrls[fileId] = newUrl;
+                        const iframe = document.getElementById('lpIframe');
+                        if (iframe && iframe.contentWindow) {
+                            iframe.contentWindow.postMessage({ type: 'swap-stylesheet', oldUrl, newUrl }, '*');
+                        }
+                        setTimeout(() => cmRevoke(oldUrl), 2000); // grace period for the swap to land
+                    }).catch(() => {});
                     return;
                 }
 

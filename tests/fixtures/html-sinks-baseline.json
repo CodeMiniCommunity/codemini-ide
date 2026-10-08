@@ -1,0 +1,19 @@
+{
+  "js/core/app.js": 17,
+  "js/core/editor.js": 21,
+  "js/core/my-keys.js": 14,
+  "js/core/script.js": 14,
+  "js/core/search.js": 2,
+  "js/core/settings-profile.js": 1,
+  "js/git/git.js": 4,
+  "js/git/stacks.js": 10,
+  "js/notebook/environments.js": 1,
+  "js/notebook/notebook-kernels.js": 16,
+  "js/notebook/notebook-ui.js": 14,
+  "js/terminal/console.js": 54,
+  "js/terminal/terminal-window.js": 2,
+  "js/viewers/archive.js": 1,
+  "js/viewers/docs.js": 1,
+  "js/viewers/media.js": 4,
+  "js/viewers/preview.js": 42
+}

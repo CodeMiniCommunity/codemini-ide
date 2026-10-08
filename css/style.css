@@ -4559,3 +4559,43 @@ body.compact-explorer .tree-view-item {
 .explorer-status-right { display: flex; align-items: center; gap: 5px; flex-shrink: 0; cursor: default; }
 .explorer-sync-icon { display: inline-flex; align-items: center; font-size: 13px; line-height: 1; color: var(--accent-blue); }
 .explorer-status-right.is-offline .explorer-sync-icon { color: var(--icon-gray); }
+
+/* --- Version history cards (Settings > Updates and the Version History tab) ---
+   Button + animated panel, deliberately unlike the Help tab's <details> rows. No coloured edge or
+   accent border: the card keeps the same neutral border open or closed. */
+.update-badge { background: var(--accent-new); color: var(--text-on-accent, #fff); padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; text-transform: uppercase; }
+.rel-list { display: flex; flex-direction: column; gap: 10px; }
+.rel-card { border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-panel); overflow: hidden; transition: box-shadow 0.2s; }
+.rel-card.open { box-shadow: 0 2px 10px var(--shadow-light); }
+.rel-head { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 14px; margin: 0; border: 0; background: transparent; color: var(--text-main); font: inherit; text-align: left; cursor: pointer; transition: background 0.2s; }
+.rel-head:hover { background: var(--hover-blue); }
+.rel-head:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: -2px; }
+.rel-tile { flex: none; display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 8px; background: var(--bg-white); color: var(--accent-blue); font-size: 18px; transition: background 0.2s, color 0.2s; }
+.rel-card.open .rel-tile { background: var(--accent-blue); color: var(--text-on-accent, #fff); }
+.rel-main { display: block; flex: 1; min-width: 0; }
+.rel-title { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 700; color: var(--text-main); }
+.rel-tag { display: block; margin-top: 2px; font-size: 12px; line-height: 1.45; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rel-card.open .rel-tag { white-space: normal; overflow: visible; }
+.rel-side { flex: none; display: flex; align-items: center; gap: 10px; }
+.rel-date { font-size: 12px; color: var(--text-muted); }
+.rel-count { font-size: 11px; font-weight: 600; color: var(--text-muted); border: 1px solid var(--border-color); border-radius: 10px; padding: 1px 8px; }
+.rel-chevron { font-size: 18px; color: var(--icon-gray); transform: rotate(-90deg); transition: transform 0.25s ease; }
+.rel-card.open .rel-chevron { transform: rotate(0deg); }
+.rel-body { display: grid; grid-template-rows: 0fr; visibility: hidden; transition: grid-template-rows 0.25s ease, visibility 0s linear 0.25s; }
+.rel-card.open .rel-body { grid-template-rows: 1fr; visibility: visible; transition: grid-template-rows 0.25s ease, visibility 0s; }
+.rel-body-inner { min-height: 0; overflow: hidden; }
+.rel-features { list-style: none; margin: 0; padding: 4px 14px 14px 62px; font-size: 13px; line-height: 1.55; color: var(--text-main); }
+.rel-features li { display: flex; align-items: flex-start; gap: 8px; padding: 6px 0; border-top: 1px dashed var(--border-color); }
+.rel-features li:first-child { border-top: 0; }
+.rel-features li i { flex: none; margin-top: 2px; font-size: 14px; color: var(--accent-new); }
+.rel-meta { display: none; margin-top: 4px; font-size: 11px; color: var(--text-muted); }
+.rel-viewall { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; margin-top: 12px; padding: 9px 14px; border: 1px dashed var(--border-color); border-radius: 6px; background: transparent; color: var(--accent-blue); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.2s, border-color 0.2s; }
+.rel-viewall:hover { background: var(--hover-blue); border-color: var(--accent-blue); }
+.rel-viewall:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
+@media (max-width: 560px) { .rel-date, .rel-count { display: none; } .rel-meta { display: block; } .rel-features { padding-left: 14px; } }
+@media (prefers-reduced-motion: reduce) { .rel-body, .rel-card.open .rel-body, .rel-chevron { transition: none; } }
+
+/* The "Version History" tab page */
+.versions-page { padding: 16px; height: 100%; overflow-y: auto; color: var(--text-main); }
+.versions-title { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; font-size: 20px; color: var(--accent-blue); }
+.versions-sub { margin: 0 0 16px; font-size: 13px; color: var(--text-muted); }

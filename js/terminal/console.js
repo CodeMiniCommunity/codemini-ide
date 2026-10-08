@@ -157,7 +157,7 @@
         
         tab.innerHTML = `
             <i class="ri-terminal-box-line" style="color: ${iconColor}; margin-right: 3px; font-size: 14px;"></i>
-            <span class="tab-title" style="margin-right: 3px;">${tabName}</span>
+            <span class="tab-title" style="margin-right: 3px;">${CodeMiniEscape.html(tabName)}</span>
             <i class="ri-close-line tab-close close-tab"></i>
         `;
 
@@ -501,7 +501,7 @@
         let historyIndex = commandHistory.length;
 
         if (savedState && savedState.outputHtml) {
-            outputArea.innerHTML = savedState.outputHtml;
+            outputArea.innerHTML = CodeMiniEscape.sanitize(savedState.outputHtml, { allowStyle: true }); // saved HTML: allowlist it on the way back in
             const promptDisplay = pane.querySelector('.console-prompt');
             if (promptDisplay) promptDisplay.textContent = `In [${executionCount}]:`;
         }
@@ -595,7 +595,7 @@ json.dumps(_collect_variables())
                 }
                 contentDiv.innerHTML = html;
             } catch (err) {
-                contentDiv.innerHTML = `<div style="padding: 20px; color: var(--color-danger); text-align:center;">Failed to fetch variables: ${err.message}</div>`;
+                contentDiv.innerHTML = `<div style="padding: 20px; color: var(--color-danger); text-align:center;">Failed to fetch variables: ${CodeMiniEscape.html(err.message)}</div>`;
             }
         }
 

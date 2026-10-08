@@ -1,0 +1,71 @@
+{
+  "_note": "Records written by the code that existed BEFORE shield.js (vault.js and file-lock.js at 1.3.1 + unreleased lock/GitHub-token work), with the minimum iteration count so the tests stay fast. tests/shield.test.js opens them with the current code. Do not regenerate these from current code: their whole point is that they were not.",
+  "vault": {
+    "password": "\ufb01ne-cafe\u0301-pass 1",
+    "entries": [
+      {
+        "id": "a1b2c3d4e5f6a7b8",
+        "name": "OpenAI prod",
+        "service": "OpenAI",
+        "type": "api",
+        "value": "sk-FIXTURE-VALUE-\u00e9\u4e2d",
+        "notes": "billing",
+        "created": 1,
+        "updated": 2
+      }
+    ],
+    "record": {
+      "type": "codemini-vault",
+      "v": 1,
+      "kdf": "PBKDF2-SHA256",
+      "iter": 100000,
+      "salt": "E2dO4S3rbT5IE8vTE2NbSA==",
+      "iv": "LIfQ4Mx5yfVKRRqK",
+      "ct": "WFg/q8c9OTegt6p3ZrzE903kcz4uo0222gMonN6dhrWZ8z946bFuv4lPbw+PUtBaxAYncuKjm+lrzsM8/dt0lcLgoHWUBi3pduZgBPnIDXWujcdBu0ls0nrJg6s5GsPd5ez5NgxxkfgdXpqwzoq7Rlp0vsJnMGbb+NI5Eoi+thsX7ysW7CE73sUgRkZzqwLw/w7D2wY+7X4qlnhof0b6qvuagIQ4vrB4gJidlMKkkiSDKBLyTqXYohzHWs7IuAQqxuPa1UWdBvSr82XehwoSBEmlEiN+7KTS1C/kq9KkkzP2hV1CB5dn2SAoxZmMMMQQpNNMnm9MbLBEFgNOi72qcIghaK8ArhefD4Ok7lvtESxgXLIRJ0zolw0itvRtfENp1lPggWHY4Vz6eoumLg5kS4lXkE1PhMTRbUuurU0WYQrbJWYokqCsGRqJ8nFByT6NRwHXtStY3A5kvBK/eD54Bju2KAh6tfJXHhZfOFqTzXo6BHPs4PoKi9BRUmSNjQ8sZ5RlMlbt7DDjsvqCJ/J510+cx9mosR2ObIe0an8A1fWxLWlvCkzCASl1vuE0nXKhz6yBeM7Z/ZsA9iakct9tyTO0muE3BamvFGQgASbJP/8dJ9ygilufby12FHcDtXyopLuMpx+T40PsBqJPpX4qP0EN+p2bXxLmAKj5gPVQohGOjwrR0TWGvZsH9SG7tBop9Ur7DWzB+nWxYdHWgSkNmQgbafDGFH3wLKhOjwlRGsNPU7g1PVRdZ+I0oV5+/uhWQSuKANqxSMO83kd/g1DixT+yn0TN0wUbUaSeqWIKMyCgUtDyKTxm7JhB0UZ0zOI8n/nRxHluuDNCMvQKBOoV7qInu7qn72D1ARffYxbM/piJhyXm5XN3RJZXMrejVLTnnez2cC+TwVNGs+4pEvrjKkl8wpJ63Kwv4T3lsyCpHfUSIbEZafxS+ycxTWuc7Wk2sya15p06vjopjDxEg3Uh+FZ3Z1M/FnyOxuA29a6/Yk5gQcKzAkqabE+eB3NfWMSlVpeFH3KDPCZy5ty5yq6fIyG2y7KW4+MK6hBiSjN0ECO8ggq0COxF1oFjsV6VWQjfqZzVYF6Z4pMRDeukoMpd3TafZKS11TsnrSQXQzpmQrvFPicwAN+UWw94+bYr1zKEUkcxXlM58+9axgrsrOaAf/pGAbHDxYgKsbVh1uBITOYDCxzMkpZ3Z+NgbvNXkRXHZutzU2M485nT9bwKRQC7W8ojTICycZ2771IiyQvHX9RCiQhdF0E1Bo5cH5af3/DFLgVIPjmxLUtCN8Sm+h0l3asEFBlrIzHQn2pzWtXcUeGCj/QgxS3z5P7nu9o4V8rBiPacJo+l7hWXDHfxG7nMlD2QkEgKQWIepzJASGolj9w="
+    }
+  },
+  "lockedFile": {
+    "password": "\ufb01le-lock-cafe\u0301 pw 2",
+    "text": "top secret fixture text \u00e9 \u4e2d \ud83d\ude80\nline 2",
+    "record": {
+      "id": "f1",
+      "parentId": "root",
+      "name": "notes.txt",
+      "type": "file",
+      "content": "",
+      "isLocked": true,
+      "password": null,
+      "timestamp": 1,
+      "enc": {
+        "iv": "PpGdT5OtwMTWToB5",
+        "ct": "ZoawmLlTIkfx47qoE1lJdSjQ32DnydTOTgTCZjGp0XZL5dsMaDun1JJiaKm/plkkfaI07o5F9jOUhA=="
+      },
+      "lock": {
+        "v": 1,
+        "kdf": "PBKDF2-SHA256",
+        "iter": 100000,
+        "salt": "XnUXtus38d6CI7hUfDnapg==",
+        "check": "+Yi4JDG4QB9wzuV5U+QDrmJHIoM0ZCzwAyjm4b/c3Ek="
+      }
+    }
+  },
+  "lockedFolder": {
+    "password": "\ufb01le-lock-cafe\u0301 pw 2",
+    "record": {
+      "id": "d1",
+      "parentId": "root",
+      "name": "private",
+      "type": "folder",
+      "isLocked": true,
+      "password": null,
+      "timestamp": 1,
+      "lock": {
+        "v": 1,
+        "kdf": "PBKDF2-SHA256",
+        "iter": 100000,
+        "salt": "sSm5+xZF9uEQTmXKmWbIPQ==",
+        "check": "utvu2TotzSxNy4qeQKHB6PBOmEc1boxMJakaqwVQRa0="
+      }
+    }
+  }
+}

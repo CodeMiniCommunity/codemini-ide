@@ -119,20 +119,16 @@
             display: none;
         }
 
-        /* Status-bar button: a small dot while something is unread. */
-        #nowIsland {
-            position: relative;
-        }
-
+        /* Status-bar button: the unread count, as plain text (no background) right after the icon.
+           It is a flex item of .status-item, so it is vertically centred with the icon and never
+           overlaps it. The number comes from the data-unread attribute set in render(). */
         #nowIsland.has-unread::after {
-            content: '';
-            position: absolute;
-            top: 3px;
-            right: 3px;
-            width: 7px;
-            height: 7px;
-            border-radius: 50%;
-            background-color: var(--accent-new, #00897b);
+            content: attr(data-unread);
+            color: var(--accent-new, #00897b);
+            font-size: 11px;
+            font-weight: 700;
+            line-height: 1;
+            font-variant-numeric: tabular-nums;
         }
 
         .ni-empty {
@@ -252,7 +248,9 @@
             display: none;
             flex-direction: column;
             background-color: var(--bg-white);
-            border-radius: 4px;
+            /* Follows the panel's corners, so a theme pack that rounds #nowIslandPanel rounds this too. */
+            border-radius: inherit;
+            overflow: hidden;
         }
 
         .ni-viewer.show {
@@ -265,7 +263,6 @@
             justify-content: space-between;
             gap: 10px;
             padding: 10px 15px;
-            border-bottom: 1px dashed var(--border-color);
         }
 
         .ni-viewer-left {
@@ -337,8 +334,130 @@
             color: var(--text-on-accent, #fff);
         }
 
+        /* ---- Notification toast: appears where the app's other toasts appear when a notification arrives
+           while Now Island is closed. Own names (#notifToastStack, .nt-*) so it never shares rules with
+           .toast-container / .custom-toast. --nt-offset lifts it above any visible app toast. ---- */
+        #notifToastStack {
+            position: fixed;
+            bottom: calc(35px + var(--nt-offset, 0px));
+            right: 20px;
+            z-index: 10000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            pointer-events: none;
+        }
+
+        .nt-toast {
+            pointer-events: auto;
+            cursor: pointer;
+            box-sizing: border-box;
+            width: 360px;
+            max-width: calc(100vw - 40px);
+            padding: 10px 14px 12px;
+            background-color: var(--bg-white, #ffffff);
+            border: 1px solid var(--border-color, #cccccc);
+            border-radius: 3px;
+            box-shadow: 0 4px 12px var(--shadow-color, rgba(0, 0, 0, 0.15));
+            color: var(--text-main, #333333);
+            font-family: var(--font-main, sans-serif);
+            text-align: left;
+            animation: ntFadeIn 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) forwards;
+        }
+
+        .nt-toast:focus-visible {
+            outline: 1px solid var(--accent-blue);
+            outline-offset: -1px;
+        }
+
+        .nt-toast.fade-out {
+            animation: ntFadeOut 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) forwards;
+        }
+
+        .nt-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+        .nt-source {
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-muted, #666666);
+        }
+
+        .nt-close {
+            flex: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: -4px -6px -4px 0;
+            padding: 4px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-size: 16px;
+            color: var(--text-muted, #666666);
+            transition: color 0.2s ease;
+        }
+
+        .nt-close:hover {
+            color: var(--text-main, #333333);
+        }
+
+        .nt-title {
+            margin-top: 4px;
+            font-size: 13px;
+            font-weight: 600;
+            line-height: 1.35;
+            color: var(--text-main, #333333);
+            overflow: hidden;
+            display: -webkit-box;
+            -webkit-box-orient: vertical;
+            -webkit-line-clamp: 2;
+            line-clamp: 2;
+            overflow-wrap: anywhere;
+        }
+
+        .nt-text {
+            margin-top: 2px;
+            font-size: 12px;
+            color: var(--text-muted, #666666);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        @keyframes ntFadeIn {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes ntFadeOut {
+            from { opacity: 1; transform: translateY(0); }
+            to { opacity: 0; transform: translateY(12px); }
+        }
+
         /* Mobile Adaptations */
         @media (max-width: 768px) {
+            /* Same spot as the app's own mobile toast: full width, above the status bar */
+            #notifToastStack {
+                left: 16px;
+                right: 16px;
+                bottom: calc(56px + var(--nt-offset, 0px));
+            }
+
+            .nt-toast {
+                width: 100%;
+                max-width: 100%;
+            }
+
             #nowIslandPanel {
                 bottom: 55px; /* Above mobile status bar (46px) + margin */
                 right: 10px;
@@ -450,7 +569,16 @@
         const unread = unreadCount();
         badge.textContent = unread > 99 ? '99+' : String(unread);
         badge.hidden = unread === 0;
-        if (nowIslandBtn) nowIslandBtn.classList.toggle('has-unread', unread > 0);
+        if (nowIslandBtn) {
+            nowIslandBtn.classList.toggle('has-unread', unread > 0);
+            if (unread > 0) {
+                nowIslandBtn.dataset.unread = badge.textContent; // same text as the tab badge (99+ cap)
+                nowIslandBtn.setAttribute('aria-label', 'Now Island, ' + unread + ' unread notification' + (unread === 1 ? '' : 's'));
+            } else {
+                delete nowIslandBtn.dataset.unread;
+                nowIslandBtn.removeAttribute('aria-label');
+            }
+        }
 
         notifPane.textContent = '';
         if (!items.length) {
@@ -490,6 +618,7 @@
             title: String((input && input.title) || 'Notification'),
             text: String((input && input.text) || ''),
             kind: input && input.kind ? String(input.kind) : 'info',
+            source: String((input && input.source) || 'CodeMini'), // who it is from, shown on the toast
             actions: Array.isArray(input && input.actions) ? input.actions.filter(a => typeof a === 'string') : [],
             pending: !!(input && input.pending),
             session: SESSION,
@@ -498,6 +627,9 @@
         };
         items = [n].concat(items.filter(x => x.id !== n.id)); // same id replaces: one live "update" notification at a time
         commit();
+        // A toast only when the island is closed (when it is open the new item is already in front of the user)
+        // and the sender did not opt out (the update notice already has its own toast in pwa.js).
+        if (!(input && input.toast === false) && !panel.classList.contains('show')) showToast(n);
         return n.id;
     }
 
@@ -505,6 +637,7 @@
         const n = items.find(x => x.id === id);
         if (!n || n.read) return;
         n.read = true;
+        dismissToast(id);
         commit();
     }
 
@@ -513,7 +646,125 @@
         items = items.filter(x => x.id !== id);
         if (items.length === had) return;
         if (openViewerId === id) hideViewer();
+        dismissToast(id);
         commit();
+    }
+
+    // ---- notification toast ----
+    const TOAST_MS = 6000;       // on screen
+    const TOAST_RESUME_MS = 3000; // after the pointer or focus leaves it
+    const TOAST_MAX = 3;
+    const toastTimers = new Map(); // notification id -> timer
+    let toastStack = null;
+    let toastOther = null;         // the app's own #toast-container while a ResizeObserver watches it
+    let toastResize = null;
+
+    // Keeps this stack just above the app's other toast when both are on screen (they share a corner).
+    function syncToastOffset() {
+        if (!toastStack) return;
+        const other = document.getElementById('toast-container');
+        if (other !== toastOther) {
+            if (toastResize) { toastResize.disconnect(); }
+            toastOther = other;
+            if (other && toastResize) toastResize.observe(other);
+        }
+        const h = other ? other.offsetHeight : 0;
+        toastStack.style.setProperty('--nt-offset', h ? (h + 10) + 'px' : '0px');
+    }
+
+    function ensureToastStack() {
+        if (toastStack && toastStack.isConnected) return toastStack;
+        toastStack = el('div');
+        toastStack.id = 'notifToastStack';
+        toastStack.setAttribute('aria-live', 'polite');
+        document.body.appendChild(toastStack);
+        if (typeof ResizeObserver === 'function') toastResize = new ResizeObserver(syncToastOffset);
+        if (typeof MutationObserver === 'function') new MutationObserver(syncToastOffset).observe(document.body, { childList: true });
+        return toastStack;
+    }
+
+    function toastFor(id) {
+        return toastStack ? Array.from(toastStack.children).find(t => t.dataset.id === id) : null;
+    }
+
+    function armToast(id, ms) {
+        clearTimeout(toastTimers.get(id));
+        toastTimers.set(id, setTimeout(() => dismissToast(id), ms));
+    }
+
+    function dismissToast(id) {
+        clearTimeout(toastTimers.get(id));
+        toastTimers.delete(id);
+        const t = toastFor(id);
+        if (!t || t.classList.contains('fade-out')) return;
+        t.classList.add('fade-out');
+        // Performance Mode turns animations off, so 'animationend' may never fire: the timer finishes the job
+        // (300ms matches .nt-toast.fade-out, as the app's own toast does).
+        let gone = false;
+        const finish = () => {
+            if (gone) return;
+            gone = true;
+            t.remove();
+            syncToastOffset();
+        };
+        t.addEventListener('animationend', finish);
+        setTimeout(finish, 300);
+    }
+
+    function dismissAllToasts() {
+        if (!toastStack) return;
+        Array.from(toastStack.children).forEach(t => dismissToast(t.dataset.id));
+    }
+
+    function showToast(n) {
+        const stack = ensureToastStack();
+        let t = toastFor(n.id);
+        if (t && t.classList.contains('fade-out')) { t.remove(); t = null; }
+        if (!t) {
+            t = el('div', 'nt-toast');
+            t.dataset.id = n.id;
+            t.tabIndex = 0;
+            t.setAttribute('role', 'status');
+            t.title = 'Open in Now Island';
+
+            const head = el('div', 'nt-head');
+            const close = el('button', 'nt-close');
+            close.type = 'button';
+            close.setAttribute('aria-label', 'Dismiss notification');
+            close.appendChild(el('i', 'ri-close-line'));
+            close.addEventListener('click', (e) => { e.stopPropagation(); dismissToast(n.id); });
+            head.append(el('span', 'nt-source'), close);
+            t.append(head, el('div', 'nt-title'), el('div', 'nt-text'));
+
+            // stopPropagation: otherwise the click reaches the document's "click outside closes the island" handler,
+            // which sees a click outside the panel and closes it again straight after it opened.
+            t.addEventListener('click', (e) => { e.stopPropagation(); dismissToast(n.id); openNotification(n.id); });
+            t.addEventListener('keydown', (e) => {
+                if (e.target !== t) return;
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); dismissToast(n.id); openNotification(n.id); }
+                else if (e.key === 'Escape') dismissToast(n.id);
+            });
+            // Reading it (pointer or keyboard focus) pauses the countdown.
+            t.addEventListener('mouseenter', () => clearTimeout(toastTimers.get(n.id)));
+            t.addEventListener('mouseleave', () => armToast(n.id, TOAST_RESUME_MS));
+            t.addEventListener('focusin', () => clearTimeout(toastTimers.get(n.id)));
+            t.addEventListener('focusout', () => armToast(n.id, TOAST_RESUME_MS));
+            stack.appendChild(t);
+        }
+        // Same id again (a repeated notification) refreshes the one toast instead of stacking another.
+        t.querySelector('.nt-source').textContent = n.source || 'CodeMini';
+        t.querySelector('.nt-title').textContent = n.title;
+        t.querySelector('.nt-text').textContent = n.text || '';
+
+        // More than TOAST_MAX at once: the oldest goes immediately (it is still in the list).
+        while (stack.children.length > TOAST_MAX) {
+            const oldest = stack.firstElementChild;
+            clearTimeout(toastTimers.get(oldest.dataset.id));
+            toastTimers.delete(oldest.dataset.id);
+            oldest.remove();
+        }
+        syncToastOffset();
+        armToast(n.id, TOAST_MS);
     }
 
     // ---- viewer ----
@@ -523,9 +774,31 @@
         else document.getElementById('settingsIconItem')?.click();
     }
 
+    // Opens a sidebar the same way its menu item does (and leaves it alone if it is already open).
+    function openSidebarVia(menuId, sidebarId) {
+        setOpen(false);
+        const sb = document.getElementById(sidebarId);
+        if (sb && !sb.classList.contains('open')) document.getElementById(menuId)?.click();
+    }
+
+    function openSettingsPage(tabId) {
+        setOpen(false);
+        if (typeof window.openSettingsTab === 'function') window.openSettingsTab(tabId);
+        else document.getElementById('settingsIconItem')?.click();
+    }
+
     const ACTIONS = {
         'reload': { label: 'Reload now', primary: true, show: () => !!(window.CodeMiniPWA && window.CodeMiniPWA.getUpdateState().status === 'updated'), run: () => window.CodeMiniPWA.reload() },
-        'open-updates': { label: 'Open Updates settings', primary: false, show: () => true, run: openUpdatesSettings }
+        'open-updates': { label: 'Open Updates settings', primary: false, show: () => true, run: openUpdatesSettings },
+        'open-source-control': { label: 'Open Source Control', primary: true, show: () => true, run: () => openSidebarVia('menuSource', 'sourceControlSidebar') },
+        'open-keys': { label: 'Open My Keys', primary: true, show: () => true, run: () => openSidebarVia('menuKeys', 'keysSidebar') },
+        'open-security': { label: 'Open Security settings', primary: false, show: () => true, run: () => openSettingsPage('security') },
+        // Needs a click (a user gesture): the browser may ask permission. app-alerts.js owns the logic.
+        'protect-storage': {
+            label: 'Protect my files', primary: true,
+            show: () => !!(window.CodeMiniAlerts && window.CodeMiniAlerts.canProtectStorage()),
+            run: () => { if (window.CodeMiniAlerts) window.CodeMiniAlerts.protectStorage(); }
+        }
     };
 
     function renderViewer() {
@@ -574,6 +847,7 @@
     // ---- panel + tabs ----
     function setOpen(open) {
         panel.classList.toggle('show', open);
+        if (open) dismissAllToasts();
         if (!open) hideViewer();
         if (window.saveCurrentUIState) window.saveCurrentUIState();
     }
@@ -587,6 +861,7 @@
 
     function openNotification(id) {
         panel.classList.add('show');
+        dismissAllToasts();
         setActiveTab(1);
         if (id) showViewer(id);
         if (window.saveCurrentUIState) window.saveCurrentUIState();
@@ -638,6 +913,7 @@
             kind: 'update',
             pending: true,
             title: 'Update installed',
+            toast: false, // pwa.js already shows its own "updated, reload" toast
             text: 'CodeMini IDE was updated. Reload to use the latest version. Nothing reloads by itself, so your unsaved changes are safe until you choose to.',
             actions: ['reload', 'open-updates']
         });

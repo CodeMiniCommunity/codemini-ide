@@ -65,7 +65,7 @@ window.initPdfViewer = async function(fileId, targetId) {
     const pageIndicator = pane.querySelector('#pdfPageIndicator');
 
     const fail = (msg) => {
-        if (loadingEl) loadingEl.innerHTML = `<i class="ri-error-warning-line" style="font-size:28px; color:var(--color-danger);"></i><span style="text-align:center; max-width:320px; line-height:1.5;">${msg}</span>`;
+        if (loadingEl) loadingEl.innerHTML = `<i class="ri-error-warning-line" style="font-size:28px; color:var(--color-danger);"></i><span style="text-align:center; max-width:320px; line-height:1.5;">${CodeMiniEscape.html(msg)}</span>`;
     };
 
     const fileData = await new Promise((resolve) => {

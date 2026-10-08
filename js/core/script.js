@@ -184,7 +184,8 @@ window.saveCurrentUIState = function() {
         sidebar: document.getElementById('explorerSidebar')?.classList.contains('open') ? 'explorer' :
                  document.getElementById('searchSidebar')?.classList.contains('open') ? 'search' :
                  document.getElementById('stackSidebar')?.classList.contains('open') ? 'stack' :
-                 document.getElementById('sourceControlSidebar')?.classList.contains('open') ? 'source' : null,
+                 document.getElementById('sourceControlSidebar')?.classList.contains('open') ? 'source' :
+                 document.getElementById('keysSidebar')?.classList.contains('open') ? 'keys' : null,
         bottomPanel: document.getElementById('problemsPanel')?.style.display !== 'none',
         bottomActiveTab: document.querySelector('.bottom-panel-tab.active')?.dataset.target || 'problemsPanelContent',
         treeMode: window.isTreeViewMode,
@@ -233,6 +234,11 @@ window.restoreCurrentUIState = function() {
         document.getElementById('sourceControlSidebar')?.classList.add('open');
         document.getElementById('menuSource')?.classList.add('active');
         if (window.renderGitPanel) window.renderGitPanel();
+    }
+    else if (uiState.sidebar === 'keys') {
+        // Restored locked: my-keys.js renders the password screen and never persists an unlocked state.
+        document.getElementById('keysSidebar')?.classList.add('open');
+        document.getElementById('menuKeys')?.classList.add('active');
     }
 
     const problemsPanel = document.getElementById('problemsPanel');
@@ -496,6 +502,9 @@ window.closeAllSidebars = function() {
     // git.js, which owns these elements' behavior, loads after this file.
     document.getElementById('sourceControlSidebar')?.classList.remove('open');
     document.getElementById('menuSource')?.classList.remove('active');
+    // My Keys (my-keys.js) locks itself when this sidebar closes, so every path that closes it lands there.
+    document.getElementById('keysSidebar')?.classList.remove('open');
+    document.getElementById('menuKeys')?.classList.remove('active');
     // Every sidebar open/close path funnels through here, so this guarantees
     // the activity bar's overflow dropdown never stays hanging open across
     // a sidebar switch.
@@ -546,7 +555,7 @@ document.getElementById('workspaceMenuBtn')?.addEventListener('click', (e) => {
                 item.style.justifyContent = 'space-between';
 
                 const nameContainer = document.createElement('div');
-                nameContainer.innerHTML = `<i class="ri-folder-5-line"></i> ${ws.name}`;
+                nameContainer.innerHTML = `<i class="ri-folder-5-line"></i> ${CodeMiniEscape.html(ws.name)}`;
                 nameContainer.style.display = 'flex';
                 nameContainer.style.gap = '12px';
                 nameContainer.style.alignItems = 'center';
@@ -998,7 +1007,7 @@ const launcherHTMLTemplate = `
         </div>
     </div>
     <div class="launcher-section">
-        <div class="launcher-card" style="flex-direction:row; padding:12px; gap:10px; cursor:pointer;" onclick="window.open('https://buymeacoffee.com', '_blank')">
+        <div class="launcher-card" style="flex-direction:row; padding:12px; gap:10px; cursor:pointer;" onclick="window.open('https://buymeacoffee.com', '_blank', 'noopener')">
             <i class="ri-cup-line" style="margin:0; font-size:20px; color:#ff9800;"></i><span style="font-size: 13px;">Buy me a coffee</span>
         </div>
     </div>
@@ -1403,7 +1412,7 @@ document.getElementById('menuSave')?.addEventListener('click', () => {
 document.getElementById('menuSaveAs')?.addEventListener('click', () => {
     const activeGroup = document.getElementById(activeGroupId || 'editorGroup1');
     const activeTab = activeGroup ? activeGroup.querySelector('.tab.active') : null;
-    if (!activeTab || ['workspace', 'terminal', 'settings', 'profile'].includes(activeTab.dataset.type)) { if(window.showCustomModal) window.showCustomModal({title: 'Notice', text: 'Cannot "Save As" for this tab type.', submitText: 'OK'}, ()=>{}); return; }
+    if (!activeTab || ['workspace', 'terminal', 'settings', 'profile', 'versions'].includes(activeTab.dataset.type)) { if(window.showCustomModal) window.showCustomModal({title: 'Notice', text: 'Cannot "Save As" for this tab type.', submitText: 'OK'}, ()=>{}); return; }
     const fileId = activeTab.dataset.fileId; if (!fileId) return;
     const tx = db.transaction('filesystem', 'readonly');
     tx.objectStore('filesystem').get(fileId).onsuccess = (e) => {
@@ -1481,7 +1490,7 @@ document.getElementById('menuCloseSaved')?.addEventListener('click', () => {
         // saved file and get closed right along with it. Archive/PDF/media
         // viewers are real files (just uneditable ones) and correctly stay
         // eligible - there's nothing to lose in closing those.
-        const systemTypes = ['workspace', 'settings', 'profile', 'console', 'terminal', 'help'];
+        const systemTypes = ['workspace', 'settings', 'profile', 'console', 'terminal', 'help', 'versions'];
         Array.from(activeGroup.querySelectorAll('.tab:not(.unsaved-blink)')).forEach(tab => { 
             if (systemTypes.includes(tab.dataset.type)) return;
             const closeBtn = tab.querySelector('.tab-close'); 

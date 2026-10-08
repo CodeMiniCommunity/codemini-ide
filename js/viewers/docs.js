@@ -1578,7 +1578,8 @@ window.initDocumentEditor = async function(fileId, targetId) {
         const rulerVEl = pane.querySelector('#docRulerV');
         if (rulerVEl) rulerVEl.style.display = 'none';
     } else {
-        contentEl.innerHTML = bodyHTML;
+        // The body can come from a file somebody else made (a .docx, or an old saved HTML document): allowlist it.
+        contentEl.innerHTML = CodeMiniEscape.sanitize(bodyHTML, { allowStyle: true });
         // Keeps Enter-key behavior producing <p> (not a bare <div>, Chrome's
         // default) so the DOCX writer's block-element handling stays simple.
         try { document.execCommand('defaultParagraphSeparator', false, 'p'); } catch (e) { /* non-critical */ }

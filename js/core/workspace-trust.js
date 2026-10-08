@@ -201,6 +201,8 @@
     }
 
     function afterChange(dbName) {
+        // Now trusted: the "Restricted Mode is on" notice (if there was one) is out of date.
+        try { if (dbName && stateFor(dbName).trusted) clearRestrictedNotice(dbName); } catch (e) { /* not set up yet */ }
         refreshChrome();
         if (!dbName || dbName === currentDbName()) enforce();
         emitChange({ dbName });
@@ -273,6 +275,37 @@
     }
 
     // ------------------------------------------------------------------
+    // Notifications (Now Island)
+    // ------------------------------------------------------------------
+    // One notice per workspace per page load, and only for a real workspace (an empty window has nothing to
+    // restrict). It is removed again as soon as the workspace is trusted. Nothing here is workspace content.
+    const restrictedNoticed = new Set();
+    const noticeId = (dbName) => 'trust-restricted-' + dbName;
+    function notifyApp(n, tries) {
+        const api = window.CodeMiniNotifications;
+        if (!api) { // this file loads before the notification system: try again shortly (a few times at most)
+            if ((tries || 0) < 5) setTimeout(() => notifyApp(n, (tries || 0) + 1), 1500);
+            return;
+        }
+        try { api.add(Object.assign({ source: 'Workspace Trust', kind: 'security', actions: ['open-security'] }, n)); } catch (e) { /* optional */ }
+    }
+    function noticeRestricted(dbName) {
+        const st = stateFor(dbName);
+        if (!st.enabled || st.trusted || st.isRoot || restrictedNoticed.has(dbName)) return;
+        restrictedNoticed.add(dbName);
+        notifyApp({
+            id: noticeId(dbName),
+            title: 'Restricted Mode is on',
+            text: `\u201c${labelFor(dbName)}\u201d is not trusted, so notebook cells, Live Preview and running files are turned off. ` +
+                'Trust it from the banner or in Settings > Security if you know who wrote it.'
+        });
+    }
+    function clearRestrictedNotice(dbName) {
+        restrictedNoticed.delete(dbName);
+        try { if (window.CodeMiniNotifications) window.CodeMiniNotifications.remove(noticeId(dbName)); } catch (e) { /* optional */ }
+    }
+
+    // ------------------------------------------------------------------
     // 6. Trust requests and the startup flow
     // ------------------------------------------------------------------
     function requestTrust({ dbName, source = 'action' } = {}) {
@@ -303,6 +336,7 @@
             if (choice === 'trust') { setTrust(name, true); return 'trusted'; }
             if (choice === 'distrust') {
                 if (shouldPersistDenial(source, settings().startupPrompt)) setTrust(name, false);
+                noticeRestricted(name);
                 return 'restricted';
             }
             return 'dismissed'; // closed without choosing: nothing is saved, so it will be asked again
@@ -328,6 +362,7 @@
         if (go) setTimeout(() => {
             if (ctx.db === dbName) requestTrust({ dbName, source: 'startup' });
         }, 0);
+        else setTimeout(() => { if (ctx.db === dbName) noticeRestricted(dbName); }, 0); // no prompt is coming, so say it here
     }
 
     function onSettingsChanged() {

@@ -16,6 +16,7 @@ Your files live on your device (IndexedDB). Install it as a PWA and it keeps wor
 - **Integrated terminal** with a set of shell-style commands
 - **Git and GitHub integration** (clone/import, pull, push) using your own token, called directly from the browser
 - **Workspace Trust** with a Restricted Mode, configurable in Settings > Security
+- **My Keys**, an encrypted, password-protected vault for API keys, tokens and passwords (AES-256-GCM, never uploaded, locks itself)
 - **Themes**, light and dark
 - **Installable PWA** with offline support, an in-app **Install App** menu item (Chromium), app shortcuts (New File, Terminal, Search, Settings) and an "updated, reload" notice when a new version is deployed
 - **Notifications** in the Now Island, including app updates; Settings > Updates shows the update status and a "Check for updates" button
@@ -47,7 +48,7 @@ Any static server works, for example `python3 -m http.server 3000`.
 │   ├── style.css           Layout and components
 │   └── themes.css          Theme variables
 ├── js/
-│   ├── core/               App bootstrap (incl. ?action= shortcuts), app-info (version/links), pwa (service worker registration, install, update state), now-island (notifications), editor, settings, search, uploads, workspace trust
+│   ├── core/               App bootstrap (incl. ?action= shortcuts), app-info (version/links), shield (shared crypto, no UI), my-keys (My Keys vault), file-lock (locked files and folders), pwa (service worker registration, install, update state), now-island (notifications and their toast), app-alerts (storage and offline notices), editor, settings, search, uploads, workspace trust
 │   ├── notebook/           Notebook UI, kernels, plot/table preview
 │   ├── viewers/            PDF, Word, media, archive and web preview tabs
 │   ├── terminal/           Terminal window, commands, console panel
@@ -56,6 +57,13 @@ Any static server works, for example `python3 -m http.server 3000`.
 │   └── capture-screenshots.js  Captures the install-dialog screenshots into screenshots/ and manifest.json
 └── tests/
     ├── policy.test.js      Workspace Trust policy unit tests (no browser needed)
+    ├── shield.test.js      Shield crypto layer and device key, plus opening records made by the pre-Shield code (tests/fixtures/)
+    ├── runner.test.js      Preview runner: the shell and client against fake windows (allowlist, handshake, relay, spoofing, fallback)
+    ├── html-sinks.test.js  Shared escaper, the HTML-sink scanner and its per-file ratchet (new unescaped interpolations fail CI)
+    ├── hardening.test.js   Referrer policy, third-party script rules, noopener, CI permissions, the SRI tool (offline)
+    ├── git-token.test.js   Where the GitHub token lives: device-key encryption, migrations, fallbacks, lost key, reloads (tests/lib/fake-idb.js)
+    ├── my-keys.test.js     My Keys record format, password rules, validation and wiring checks
+    ├── file-lock.test.js   Locked files and folders: locks, encrypted text, legacy upgrade, wiring checks
     ├── app-info.test.js    Keeps version, links and About page consistent with the repo
     ├── pwa.test.js         Manifest, icons, shortcuts (must match the ?action= handlers in app.js), screenshots, <head> links and precache list agree
     ├── update-state.test.js  Update flow in pwa.js: shared state, toast, manual vs scheduled checks, Auto Check Updates (no browser needed)
@@ -96,6 +104,11 @@ The e2e runner serves the repo on `http://localhost:8765` itself, so nothing els
 | `explorer.e2e.js` | Explorer toolbar, search box and New Folder flow |
 | `preview-panels.e2e.js` | Live Preview Console/Network/Inspector panels: layout, push behavior, one-at-a-time |
 | `notifications.e2e.js` | Now Island notifications (item design, viewer, actions) and the update flow: toast, notification, Settings > Updates |
+| `keys-vault.e2e.js` | My Keys: password setup, locking/unlocking, add/edit/delete, auto-lock, backup, erase |
+| `runner.e2e.js` | Isolated previews on two real origins (app on :8765, runner on :8766): page works, cannot reach the app, forged messages ignored, refresh, only the app can embed the runner, fallback / off / misconfigured |
+| `xss-names.e2e.js` | Hostile file, folder and archive-entry names across the Explorer, search results, tabs, breadcrumb and archive tree: shown as text, nothing runs |
+| `sanitize.e2e.js` | `CodeMiniEscape.sanitize`: 30 hostile payloads, stability on re-sanitizing, ordinary Markdown surviving, and the sinks that use it |
+| `git-token.e2e.js` | GitHub token: encrypted with the device key (real IndexedDB, non-extractable), usable with My Keys locked and after a reload, disconnect, lost key, plain-text migration |
 | `launch-actions.e2e.js` | App shortcuts: `/?action=new-file`, `terminal`, `search`, `settings` |
 
 `tests/e2e/theme-premium-compare.manual.js` is a manual before/after comparison tool and is not part of the automated run.
@@ -122,7 +135,7 @@ When a new version is deployed, an installed or open copy notices it in the back
 
 - a toast says "CodeMini IDE was updated" with a **Reload** button,
 - Settings > Updates shows "Update installed" with **Reload now**,
-- Now Island > Notifications gets an "Update installed" notification (unread dot on the status-bar button). After the next reload it reads "Update applied".
+- Now Island > Notifications gets an "Update installed" notification (unread count shown next to the status-bar button's icon). After the next reload it reads "Update applied".
 
 `js/core/pwa.js` owns the state (`CodeMiniPWA.getUpdateState()` and the `codemini:update-state` event); the three places above only display it. To ship an update the service worker file has to change, so bump the version as described in "Adding or moving a file".
 

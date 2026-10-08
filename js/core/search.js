@@ -316,7 +316,7 @@
                         div.innerHTML = `
                             <div class="search-result-file" style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
                                 ${fileIconHTML}
-                                <span style="font-family: var(--font-main); color: var(--text-main); font-weight: 600;">${matchData.file.name}</span>
+                                <span style="font-family: var(--font-main); color: var(--text-main); font-weight: 600;">${CodeMiniEscape.html(matchData.file.name)}</span>
                             </div>
                             <div class="search-result-match">...${highlightedSnippet}...</div>
                         `;

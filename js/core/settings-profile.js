@@ -477,7 +477,7 @@ document.addEventListener('DOMContentLoaded', () => {
       } else {
         if (key.startsWith('codemini_') &&
           !key.match(/^codemini_win_/) &&
-          !key.match(/^codemini_(profile_states|windows|active_window|recently_closed|recycle_bin|ui_state|session|console|member_since|trust_)/)) {
+          !key.match(/^codemini_(profile_states|windows|active_window|recently_closed|recycle_bin|ui_state|session|console|member_since|trust_|vault|git_gh_tokenenc_)/)) {
           keysToRemove.push(key);
         }
       }
@@ -805,6 +805,115 @@ document.addEventListener('DOMContentLoaded', () => {
   const _L = (k) => (_info.links && _info.links[k]) || '#';
   const _V = _info.version || '1.0.0';
 
+  // Version history shown in Settings > Updates. Newest first; the first entry is the current release and starts open.
+  // Text is trusted, static markup (it carries <strong> and entities), so it is not escaped.
+  const _RELEASES = [
+    {
+      version: _V, icon: 'ri-install-line', current: true, date: 'Latest release',
+      summary: 'My Keys: an encrypted vault for your API keys, tokens and passwords.',
+      features: [
+        '<strong>My Keys:</strong> a new sidebar in the activity menu, with Add Keys, My Keys and Config tabs.',
+        '<strong>Strong encryption:</strong> everything is sealed with AES-256-GCM, using a key derived from your password. Only ciphertext is stored and nothing is uploaded.',
+        '<strong>Locks itself:</strong> when the sidebar closes, when you are idle, when you switch windows or when the app goes to the background.',
+        '<strong>Add, search &amp; reveal:</strong> save keys with a name, service, type and notes, then search, copy, edit or delete them. Revealed values hide again by themselves.',
+        '<strong>Config &amp; backup:</strong> auto-lock time, change password, encrypted backup export and import, and an erase-vault option.'
+      ]
+    },
+    {
+      version: '1.2.0', icon: 'ri-install-line', current: false, date: 'Earlier release',
+      summary: 'CodeMini is now a proper installable app.',
+      features: [
+        '<strong>Install App:</strong> add CodeMini to your device from the More menu or your browser.',
+        '<strong>App shortcuts:</strong> long-press or right-click the installed icon for New File, Terminal, Search and Settings.',
+        '<strong>Update notice &amp; notifications:</strong> new versions are announced in a toast, here, and in Now Island.'
+      ]
+    },
+    {
+      version: '1.0.0', icon: 'ri-rocket-line', current: false, date: 'April 2026',
+      summary: 'The first release of CodeMini: an offline-first IDE that runs entirely in your browser.',
+      features: [
+        '<strong>Live Preview:</strong> Seamless side-by-side HTML/JS/CSS rendering.',
+        '<strong>Terminal:</strong> Fully functional browser-based bash emulator.',
+        '<strong>Multi-Window Workspaces:</strong> Isolate your projects with ease.',
+        '<strong>Enhanced Notebooks:</strong> Pyodide integration and Java environment.'
+      ]
+    }
+  ];
+
+  // How many releases the Updates page lists before pointing at the full "Version History" tab.
+  const _RELEASES_SHOWN = 6;
+
+  // Builds the collapsible cards. `idPrefix` keeps element ids unique when the Updates page and the
+  // Version History tab are open at the same time; the first card starts open.
+  function _releaseCards(list, idPrefix) {
+    return '<div class="rel-list">' + list.map((r, i) => {
+      const open = i === 0;
+      const id = idPrefix + i;
+      const count = r.features.length + ' ' + (r.features.length === 1 ? 'change' : 'changes');
+      return `
+            <div class="rel-card${r.current ? ' current' : ''}${open ? ' open' : ''}">
+              <button type="button" class="rel-head" id="${id}Head" aria-expanded="${open}" aria-controls="${id}">
+                <span class="rel-tile"><i class="${r.icon}"></i></span>
+                <span class="rel-main">
+                  <span class="rel-title">v${r.version}${r.current ? ' <span class="update-badge">Current</span>' : ''}</span>
+                  <span class="rel-tag">${r.summary}</span>
+                  <span class="rel-meta">${r.date} &middot; ${count}</span>
+                </span>
+                <span class="rel-side">
+                  <span class="rel-date">${r.date}</span>
+                  <span class="rel-count">${count}</span>
+                  <i class="ri-arrow-down-s-line rel-chevron"></i>
+                </span>
+              </button>
+              <div class="rel-body" id="${id}" role="region" aria-labelledby="${id}Head">
+                <div class="rel-body-inner">
+                  <ul class="rel-features">${r.features.map(f => '<li><i class="ri-check-line"></i><span>' + f + '</span></li>').join('')}</ul>
+                </div>
+              </div>
+            </div>`;
+    }).join('') + '</div>';
+  }
+
+  // Settings > Updates: the newest releases plus a button that opens the full list in its own tab.
+  function _releaseHistorySection() {
+    return _releaseCards(_RELEASES.slice(0, _RELEASES_SHOWN), 'relS') + `
+            <button type="button" class="rel-viewall" data-action="view-all-versions">View all versions <i class="ri-arrow-right-line"></i></button>`;
+  }
+
+  // One delegated handler for both places the cards appear (the Updates page and the Version History tab).
+  function _wireReleaseCards(root) {
+    root.addEventListener('click', (e) => {
+      const viewAll = e.target.closest('.rel-viewall');
+      if (viewAll && root.contains(viewAll)) { window.openVersionHistoryTab(); return; }
+      const head = e.target.closest('.rel-head');
+      if (!head || !root.contains(head)) return;
+      const card = head.closest('.rel-card');
+      const open = !card.classList.contains('open');
+      card.classList.toggle('open', open);
+      head.setAttribute('aria-expanded', String(open));
+    });
+  }
+
+  // The "Version History" tab: every release, newest first. Reuses an existing tab instead of opening a second.
+  window.openVersionHistoryTab = function () {
+    const existingTab = document.querySelector('.tab[data-type="versions"]');
+    if (existingTab) {
+      if (window.switchTab) window.switchTab(existingTab.dataset.target);
+      return;
+    }
+    if (!window.createNewTab) return;
+    const html = `
+      <div class="versions-page">
+        <h2 class="versions-title"><i class="ri-history-line"></i> Version History</h2>
+        <p class="versions-sub">Every CodeMini release, newest first. CodeMini v${_V} is installed.</p>
+        ${_releaseCards(_RELEASES, 'relV')}
+      </div>`;
+    window.createNewTab('Version History', 'ri-history-line', false, html, 'versions');
+    const tab = document.querySelector('.tab[data-type="versions"]');
+    const pane = tab ? document.getElementById(tab.dataset.target) : null;
+    if (pane) _wireReleaseCards(pane);
+  };
+
   const settingsHTML = `
   <style>
   .settings-container.flex-col { display: flex; flex-direction: column; height: 100%; overflow: hidden; padding: 0; background-color: var(--bg-white); }
@@ -848,16 +957,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   @media (max-width: 768px) { .settings-sidebar { display: none; } .settings-tabs-bottom-mobile { display: flex; } .settings-content-area { padding: 15px; } .settings-container.search-active .settings-content-section { display: block !important; } }
 
-  .update-item { border: 1px solid var(--border-color); border-radius: 6px; padding: 15px; margin-bottom: 15px; background: var(--bg-panel); transition: transform 0.2s, box-shadow 0.2s; }
-  .update-item:hover { transform: translateY(-2px); box-shadow: 0 4px 12px var(--shadow-light); }
-  .update-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 1px solid var(--border-color); padding-bottom: 8px; }
-  .update-version { font-size: 16px; font-weight: bold; color: var(--accent-blue); display: flex; align-items: center; gap: 8px; }
-  .update-badge { background: var(--accent-new); color: var(--text-on-accent, #fff); padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; text-transform: uppercase; }
-  .update-date { font-size: 12px; color: var(--text-muted); }
-  .update-desc { font-size: 13px; color: var(--text-main); margin-bottom: 10px; line-height: 1.5; }
-  .update-features { margin: 0; padding-left: 20px; font-size: 13px; color: var(--text-main); line-height: 1.6; }
-  .update-features li { margin-bottom: 4px; }
-  .update-features li::marker { color: var(--accent-blue); }
   .update-status { margin-top: 24px; text-align: center; }
   .update-status > i { font-size: 40px; margin-bottom: 10px; display: block; }
   .update-status h4 { margin: 0 0 5px 0; color: var(--text-main); }
@@ -1105,33 +1204,8 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>
 
           <div style="margin-top: 40px;">
-            <h4 style="color: var(--text-muted); font-size: 12px; text-transform: uppercase; margin-bottom: 15px;">Features</h4>
-            <div class="update-item">
-              <div class="update-header">
-                <div class="update-version"><i class="ri-install-line"></i> v${_V} <span class="update-badge">Current</span></div>
-                <div class="update-date">Latest release</div>
-              </div>
-              <div class="update-desc">CodeMini is now a proper installable app.</div>
-              <ul class="update-features">
-                <li><strong>Install App:</strong> add CodeMini to your device from the More menu or your browser.</li>
-                <li><strong>App shortcuts:</strong> long-press or right-click the installed icon for New File, Terminal, Search and Settings.</li>
-                <li><strong>Update notice &amp; notifications:</strong> new versions are announced in a toast, here, and in Now Island.</li>
-              </ul>
-            </div>
-            <div class="update-item">
-              <div class="update-header">
-                <div class="update-version"><i class="ri-rocket-line"></i> v1.0.0</div>
-                <div class="update-date">April 2026</div>
-              </div>
-              <div class="update-desc">Welcome to the massive v1.0.0 update! We've completely overhauled the IDE with offline-first capabilities.</div>
-              <ul class="update-features">
-                <li><strong>Live Preview:</strong> Seamless side-by-side HTML/JS/CSS rendering.</li>
-                <li><strong>Terminal:</strong> Fully functional browser-based bash emulator.</li>
-                <li><strong>Multi-Window Workspaces:</strong> Isolate your projects with ease.</li>
-                <li><strong>Enhanced Notebooks:</strong> Pyodide integration and Java environment.</li>
-                <li><strong>Fixed plots issues:</strong> Python plots are now fixed and properly placed in it cell.</li>
-              </ul>
-            </div>
+            <h4 style="color: var(--text-muted); font-size: 12px; text-transform: uppercase; margin-bottom: 15px;">Version history</h4>
+            ${_releaseHistorySection()}
           </div>
         </div>
 
@@ -1338,6 +1412,8 @@ document.addEventListener('DOMContentLoaded', () => {
               switchSettingsTab(tab.dataset.tab);
             });
           });
+          // Version history cards + "View all versions" (Settings > Updates).
+          _wireReleaseCards(settingsContainer);
           settingsContainer.dataset.ready = '1'; // window.openSettingsTab waits for this
 
           const searchInput = settingsContainer.querySelector('#settingsSearchInput');

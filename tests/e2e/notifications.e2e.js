@@ -37,7 +37,7 @@ const NOISE = /monaco|pyodide|loadPyodide|initSqlJs|Failed to fetch|net::|requir
   ok(await ev(() => document.querySelector('.ni-pane[data-pane="notifications"]').classList.contains('active')), 'Notifications tab shows its pane');
   ok(await ev(() => !document.querySelector('.ni-pane[data-pane="now"]').classList.contains('active')), 'and hides the Now pane');
   ok(await ev(() => /No notifications/.test(document.querySelector('.ni-pane.active').textContent)), 'empty state is shown');
-  ok(await ev(() => document.getElementById('niUnreadBadge').hidden && !document.getElementById('nowIsland').classList.contains('has-unread')), 'no unread badge or dot');
+  ok(await ev(() => document.getElementById('niUnreadBadge').hidden && !document.getElementById('nowIsland').classList.contains('has-unread')), 'no unread badge or count');
 
   console.log('\n[2] an app update arrives');
   await ev(() => { window.__still = 'same page'; navigator.serviceWorker.dispatchEvent(new Event('controllerchange')); });
@@ -46,7 +46,8 @@ const NOISE = /monaco|pyodide|loadPyodide|initSqlJs|Failed to fetch|net::|requir
   let list = await items();
   ok(list.length === 1 && list[0].title === 'Update installed' && list[0].unread, 'it also lands in Notifications, unread', list);
   ok(await ev(() => document.getElementById('niUnreadBadge').textContent === '1' && !document.getElementById('niUnreadBadge').hidden), 'the tab shows an unread count of 1');
-  ok(await ev(() => document.getElementById('nowIsland').classList.contains('has-unread')), 'the status-bar button shows the unread dot');
+  ok(await ev(() => document.getElementById('nowIsland').classList.contains('has-unread')), 'the status-bar button shows the unread count');
+  ok(await ev(() => { const b = document.getElementById('nowIsland'), cs = getComputedStyle(b, '::after'); return b.dataset.unread === '1' && cs.content === '"1"' && cs.backgroundColor === 'rgba(0, 0, 0, 0)' && cs.position === 'static'; }), 'the count is plain text: the number 1, no background, laid out inline');
   await sleep(1500);
   ok(await ev(() => window.__still === 'same page'), 'nothing reloaded by itself');
   await ev(() => navigator.serviceWorker.dispatchEvent(new Event('controllerchange')));
@@ -158,6 +159,54 @@ const NOISE = /monaco|pyodide|loadPyodide|initSqlJs|Failed to fetch|net::|requir
   await sleep(200);
   ok(await ev(() => /Update installed/.test(document.getElementById('updateStateContainer').innerText)), 'an update arriving while Settings is open updates the pane live');
   ok(await ev(() => CodeMiniNotifications.list().find(n => n.id === 'app-update').pending === true && !CodeMiniNotifications.list().find(n => n.id === 'app-update').read), 'and re-raises the notification as a new unread one');
+
+  console.log('\n[7] notification toast (island closed)');
+  if (await panelOpen()) await toggleIsland();
+  await ev(() => { CodeMiniNotifications.list().forEach(n => CodeMiniNotifications.remove(n.id)); document.getElementById('notifToastStack')?.replaceChildren(); });
+  const T = '.nt-toast';
+  const rect = (sel) => ev((q) => { const e = document.querySelector(q); if (!e) return null; const r = e.getBoundingClientRect(); return { l: Math.round(r.left), r: Math.round(innerWidth - r.right), t: Math.round(r.top), b: Math.round(innerHeight - r.bottom), w: Math.round(r.width) }; }, sel);
+  const add = (o) => ev((x) => CodeMiniNotifications.add(x), o);
+  await add({ id: 't1', source: 'Source Control', title: 'Merge conflicts need your attention', text: 'Merging "dev" into "main" left 2 conflict(s). Open Source Control, resolve them in the Changes tab, then commit to finish.', actions: ['open-source-control'] });
+  await sleep(500);
+  ok(await ev((q) => document.querySelectorAll(q).length === 1, T), 'a toast appears when a notification arrives while the island is closed');
+  ok(await ev((q) => { const h = document.querySelector(q + ' .nt-head'); return h && h.children[0].textContent === 'Source Control' && h.children[1].classList.contains('nt-close'); }, T), 'source name at the top left, close icon at the top right');
+  ok(await ev((q) => { const t = document.querySelector(q); return t.children[1].textContent === 'Merge conflicts need your attention' && getComputedStyle(t.children[1]).textAlign === 'left'; }, T), 'the title is below them, left aligned');
+  ok(await ev((q) => { const x = document.querySelector(q + ' .nt-text'), cs = getComputedStyle(x); return cs.whiteSpace === 'nowrap' && cs.textOverflow === 'ellipsis' && x.scrollWidth > x.clientWidth && x.getBoundingClientRect().height < 20; }, T), 'the contents are one line, truncated');
+  ok(await ev(() => !document.getElementById('toast-container') && !document.querySelector('.custom-toast'), null), 'it does not use the app toast container or classes');
+
+  let r = await rect(T);
+  ok(r && r.r === 20 && r.b === 35, 'desktop: same corner as the app toast (right 20, bottom 35)', r);
+  await ev(() => window.showSuccessToast('Saved'));
+  await sleep(500);
+  const app = await rect('.custom-toast'), nt = await rect(T), vh = await ev(() => innerHeight);
+  // rect() gives distances from the viewport edges: the notification toast's bottom edge is at (vh - nt.b).
+  ok(app && nt && app.r === 20 && (vh - nt.b) <= app.t + 1, 'with the app toast showing, the notification toast sits above it instead of on top of it', { app, nt, vh });
+
+  await sleep(3200); // the app toast goes after 3 s
+  await ev((q) => document.querySelector(q + ' .nt-close').click(), T);
+  await sleep(500);
+  ok(await ev((q) => document.querySelectorAll(q).length === 0, T) && !(await panelOpen()), 'the X dismisses the toast without opening Now Island');
+
+  await add({ id: 't2', source: 'My Keys', title: 'Back up My Keys', text: 'You have not exported an encrypted backup yet.', actions: ['open-keys'] });
+  await sleep(500);
+  await ev((q) => document.querySelector(q).click(), T);
+  await sleep(400);
+  ok((await panelOpen()) && (await viewerOpen()) && await ev(() => /Back up My Keys/.test(document.getElementById('niViewer').textContent)), 'clicking the toast opens that notification in Now Island');
+  ok(await ev((q) => document.querySelectorAll(q).length === 0 || [...document.querySelectorAll(q)].every(e => e.classList.contains('fade-out')), T), 'and the toast goes away');
+
+  await add({ id: 't3', title: 'Arrives while open', text: 'no toast expected' });
+  await sleep(400);
+  ok(await ev((q) => !document.querySelector(q + '[data-id="t3"]'), T), 'no toast while Now Island is open (the item is in the list)');
+  await toggleIsland();
+
+  await ev(() => { CodeMiniNotifications.list().forEach(n => CodeMiniNotifications.remove(n.id)); document.getElementById('notifToastStack')?.replaceChildren(); });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await sleep(300);
+  await add({ id: 't4', source: 'CodeMini', title: 'Ready to work offline', text: 'CodeMini is saved on this device and opens without a connection.' });
+  await sleep(500);
+  r = await rect(T);
+  ok(r && r.l === 16 && r.r === 16 && r.b === 56, 'mobile: full width with 16px sides, 56px above the bottom, like the app toast', r);
+  await page.setViewportSize({ width: 1280, height: 800 });
 
   const rel = errors.filter(e => !NOISE.test(e));
   ok(rel.length === 0, 'no unexpected page errors', rel);

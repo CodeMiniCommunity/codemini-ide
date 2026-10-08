@@ -608,6 +608,7 @@
 [data-theme-pack^="codemini-premium"] .monaco-editor .suggest-widget,
 [data-theme-pack^="codemini-premium"] .launcher-card,
 [data-theme-pack^="codemini-premium"] .custom-toast,
+[data-theme-pack^="codemini-premium"] .nt-toast,
 [data-theme-pack^="codemini-premium"] .help-details,
 [data-theme-pack^="codemini-premium"] .help-feedback-box,
 [data-theme-pack^="codemini-premium"] .git-diff-box {
@@ -659,16 +660,28 @@
   border-radius: 8px !important;
 }
 
-/* Settings search bar + changelog cards */
+/* Settings search bar + version history cards */
 [data-theme-pack^="codemini-premium"] .settings-search-bar input {
   border-radius: 999px !important;
 }
 [data-theme-pack^="codemini-premium"] .settings-search-clear {
   border-radius: 8px !important;
 }
-[data-theme-pack^="codemini-premium"] .update-item {
+[data-theme-pack^="codemini-premium"] .rel-card {
   border-radius: 14px !important;
 }
+/* The card header is a full-width <button>; keep it from picking up the pill shape of the blanket
+   button rule above (the card's own overflow:hidden clips it to the rounded corners) */
+[data-theme-pack^="codemini-premium"] .rel-card button.rel-head {
+  border-radius: 0 !important;
+}
+[data-theme-pack^="codemini-premium"] .rel-tile {
+  border-radius: 12px !important;
+}
+[data-theme-pack^="codemini-premium"] .rel-count {
+  border-radius: 999px !important;
+}
+/* "View all versions" keeps the pack's pill buttons (covered by the blanket button rule above) */
 
 /* Now Island floating panel */
 [data-theme-pack^="codemini-premium"] #nowIslandPanel {
@@ -679,6 +692,10 @@
 }
 [data-theme-pack^="codemini-premium"] .ni-body {
   border-radius: 0 0 20px 20px !important;
+}
+/* Full notification viewer: sits inside the panel's 1px border, so one pixel tighter than the panel */
+[data-theme-pack^="codemini-premium"] .ni-viewer {
+  border-radius: 19px !important;
 }
 
 /* Running Stacks / kernels panel */

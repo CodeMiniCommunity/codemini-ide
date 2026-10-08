@@ -58,7 +58,7 @@
             open: false,
             items: [
                 { term: 'Create / Rename / Delete', body: 'Use the left explorer sidebar toolbar, or right-click any file or folder for a full context menu.' },
-                { term: 'Lock files & folders', body: 'Create locked items with the add-icon dropdown in the explorer. A password is required to open, preview, or reveal locked content again.' },
+                { term: 'Lock files & folders', body: 'Create locked items with the add-icon dropdown in the explorer. A password is required to open, preview, or reveal locked content again. A locked file\'s text is stored encrypted and the password itself is never saved, so a forgotten password cannot be recovered.' },
                 { term: 'Multi-select', body: 'Toggle the multi-select icon in the explorer toolbar to batch move, copy, or delete several items at once.' },
                 { term: 'Drag & drop', body: 'Drag files or folders directly onto another folder in the explorer to move them, or onto the tab bar to open them in a specific editor group.' },
                 { term: 'Move / Copy to Root', body: "Right-click any item to send it straight back to the workspace's (or window's) root folder, no matter how deeply nested it is." },

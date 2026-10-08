@@ -1,6 +1,6 @@
 // Static app-shell cache. Matches the app version (package.json / Settings > About); bump it on every release
 // that changes a precached file so installed copies refresh (old caches are deleted on activate).
-const CACHE_NAME = 'codemini-static-v1.2.0';
+const CACHE_NAME = 'codemini-static-v1.3.1';
 // Deliberately NOT bumped with CACHE_NAME: everything already in here is a valid
 // (non-opaque) CDN response, and bumping would force every user to re-download
 // Pyodide/Monaco for no reason.
@@ -38,6 +38,7 @@ const STATIC_ASSETS = [
     '/js/git/stacks.js',
     '/js/git/git.js',
     '/js/core/now-island.js',
+    '/js/core/app-alerts.js',
     '/js/notebook/notebook-kernels.js',
     '/js/notebook/notebook-ui.js',
     '/js/notebook/environments.js',
@@ -47,6 +48,11 @@ const STATIC_ASSETS = [
     '/js/core/workspace-trust.js',
     '/js/core/help-feedback.js',
     '/js/core/app-info.js',
+    '/js/core/shield.js',
+    '/js/core/html-escape.js',
+    '/js/viewers/runner-client.js',
+    '/js/core/my-keys.js',
+    '/js/core/file-lock.js',
     '/js/core/settings-profile.js',
     '/js/terminal/terminal-commands.js',
     '/js/terminal/terminal-window.js',

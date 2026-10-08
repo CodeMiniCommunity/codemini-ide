@@ -6,6 +6,13 @@
     <meta name="viewport"
         content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>CodeMini IDE</title>
+    <!-- Explicit, so older browsers also send only the origin (never the full URL) to other sites. -->
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+
+    <!-- Must stay the FIRST script on the page. Shield captures the browser's crypto functions when it loads, so a
+         script that runs before it (including the third-party ones below) could replace them first. A test pins this. -->
+    <script src="js/core/shield.js"></script>
+    <script src="js/core/html-escape.js"></script>
 
     <script>
         if (/Android/i.test(navigator.userAgent)) {
@@ -302,6 +309,8 @@
 
         <div class="sidebar" id="sourceControlSidebar"></div>
 
+        <div class="sidebar" id="keysSidebar"></div>
+
         <div class="content-area">
             <div class="editor-split-view" id="splitView">
                 <div class="editor-group active-group" id="editorGroup1">
@@ -461,6 +470,8 @@
     </div>
 
     <script src="js/core/app-info.js"></script>
+    <script src="js/core/my-keys.js"></script>
+    <script src="js/core/file-lock.js"></script>
     <script src="js/core/settings-profile.js"></script>
     <script src="js/core/editor.js"></script>
     <script src="js/notebook/notebook-kernels.js"></script>
@@ -475,6 +486,7 @@
     <script src="js/core/script.js"></script>
     <script src="js/core/workspace-trust.js"></script>
     <script src="js/core/help-feedback.js"></script>
+    <script src="js/viewers/runner-client.js"></script>
     <script src="js/viewers/preview.js"></script>
     <script src="js/git/stacks.js"></script>
     <script src="js/git/git.js"></script>
@@ -482,6 +494,7 @@
     <script src="js/terminal/terminal-window.js"></script>
     <script src="js/terminal/console.js"></script>
     <script src="js/core/now-island.js"></script>
+    <script src="js/core/app-alerts.js"></script>
     <script src="js/core/search.js"></script>
 </body>
 

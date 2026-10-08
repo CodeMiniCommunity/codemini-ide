@@ -209,7 +209,7 @@ window.restoreBottomPanelContext = function(winId) {
 window.printDebugSystem = function(msg) {
     const winId = _getEditorWinId();
     initEditorWindowState(winId);
-    window.debugLogRegistry[winId] += `<br><span style="color:var(--icon-yellow)">[System] ${msg}</span>`;
+    window.debugLogRegistry[winId] += `<br><span style="color:var(--icon-yellow)">[System] ${CodeMiniEscape.html(msg)}</span>`;
     
     const debugLog = document.getElementById('debugLog');
     if (debugLog) {
@@ -267,9 +267,9 @@ window.runDebugSession = async function() {
                 const res = await (new AsyncFunction(debugCode))();
 
                 if (capturedLogs) window.debugLogRegistry[winId] += `<br><pre style="color:var(--term-blue); margin: 5px 0; white-space: pre-wrap; font-size: 12px; border-left: 2px solid var(--border-color); padding-left: 8px;">${capturedLogs.replace(/</g, '&lt;')}</pre>`;
-                if (res !== undefined) window.debugLogRegistry[winId] += `<br><span style="color:var(--term-green)">[Success] Returned: ${res}</span>`;
+                if (res !== undefined) window.debugLogRegistry[winId] += `<br><span style="color:var(--term-green)">[Success] Returned: ${CodeMiniEscape.html(res)}</span>`;
             } catch(e) {
-                window.debugLogRegistry[winId] += `<br><span style="color:var(--color-danger)">[Exception] ${e.name}: ${e.message}</span>`;
+                window.debugLogRegistry[winId] += `<br><span style="color:var(--color-danger)">[Exception] ${CodeMiniEscape.html(e.name)}: ${CodeMiniEscape.html(e.message)}</span>`;
             } finally {
                 console.log = origLog;
                 console.error = origError;
@@ -1019,6 +1019,29 @@ window.autoSaveFile = function(fileId, newContent, tabEl, encoding, explicitDbNa
         
         store.get(fileId).onsuccess = (ev) => {
             const file = ev.target.result;
+            if (file && file.isLocked && file.type === 'file' && window.CodeMiniLock) {
+                // Locked file: the text is encrypted before it is written, and never stored as plain text. A
+                // transaction cannot wait on crypto, so encrypt first and write in a fresh one. Without the key
+                // (the file was not unlocked this session) nothing is written.
+                window.CodeMiniLock.setContent(file, newContent).then(() => {
+                    if (encoding !== undefined) file.encoding = encoding;
+                    file.timestamp = Date.now();
+                    const tx2 = isolatedDb.transaction('filesystem', 'readwrite');
+                    tx2.objectStore('filesystem').put(file).onsuccess = () => {
+                        if (tabEl && document.body.contains(tabEl)) {
+                            tabEl.classList.remove('unsaved-blink');
+                            tabEl.classList.add('saved-pulse');
+                            setTimeout(() => tabEl.classList.remove('saved-pulse'), 1000);
+                        }
+                        isolatedDb.close();
+                    };
+                    tx2.onerror = () => isolatedDb.close();
+                }).catch(() => {
+                    isolatedDb.close();
+                    if (window.showCustomModal) window.showCustomModal({ title: 'Not saved', text: 'This file is locked. Close it and unlock it again with its password to keep editing.', submitText: 'OK' }, () => { if (typeof closeGenModal === 'function') closeGenModal(); });
+                });
+                return;
+            }
             if (file) {
                 file.content = newContent; 
                 // Only touch encoding when a caller explicitly passes one (e.g.
@@ -1324,9 +1347,9 @@ window.updateEditorBreadcrumb = function(fileId, targetPaneId) {
                 if (styleMatch) iconStyle = styleMatch[1];
             }
 
-            html += `<div class="bc-item" data-file-id="${f.id}" style="${isLast ? 'color: var(--text-main); font-weight: 500;' : ''}">
+            html += `<div class="bc-item" data-file-id="${CodeMiniEscape.html(f.id)}" style="${isLast ? 'color: var(--text-main); font-weight: 500;' : ''}">
                 <i class="${iconClass}" style="${iconStyle}"></i>
-                <span>${f.name}</span>
+                <span>${CodeMiniEscape.html(f.name)}</span>
             </div>`;
             
             if (!isLast) {
@@ -1404,7 +1427,7 @@ window.createNewTab = function(title, iconClass, isUnsaved = false, contentHTML 
     tab.className = 'tab'; tab.dataset.target = targetId; if(tabType) tab.dataset.type = tabType; if(fileId) tab.dataset.fileId = fileId;
     
     let styleStr = iconStyle ? ` style="${iconStyle}"` : '';
-    tab.innerHTML = `<i class="${iconClass}"${styleStr}></i> <span>${title}</span> <i class="ri-close-line tab-close"></i>`;
+    tab.innerHTML = `<i class="${iconClass}"${styleStr}></i> <span>${CodeMiniEscape.html(title)}</span> <i class="ri-close-line tab-close"></i>`;
     
     if (isUnsaved) tab.classList.add('unsaved-blink');
     
@@ -1536,6 +1559,12 @@ window.createNewTab = function(title, iconClass, isUnsaved = false, contentHTML 
 };
 
 function openFileInTab(file) {
+    // A locked file only opens once its text has been decrypted; anything else (session restore, a stray caller)
+    // is sent through the password prompt rather than showing an empty editor that could be saved over.
+    if (file && file.isLocked && file.type === 'file' && window.CodeMiniLock && !window.CodeMiniLock.isRevealed(file)) {
+        if (typeof window.promptUnlockAndOpen === 'function') window.promptUnlockAndOpen(file);
+        return;
+    }
     // Archives must never open as a tab, under any caller - route to the
     // extraction flow instead. This is a hard guard rather than relying only
     // on proceedWithFileOpen's own check, since other callers reach this
@@ -2138,7 +2167,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 if (target && target.tagName === 'SPAN' && target.parentElement && target.parentElement.classList.contains('tab')) {
                     const tab = target.parentElement;
-                    if (tab.dataset.type === 'workspace' || tab.dataset.type === 'settings' || tab.dataset.type === 'profile' || tab.dataset.type === 'console' || tab.dataset.type === 'terminal' || tab.dataset.type === 'help' || tab.dataset.type === 'document') continue;
+                    if (tab.dataset.type === 'workspace' || tab.dataset.type === 'settings' || tab.dataset.type === 'profile' || tab.dataset.type === 'console' || tab.dataset.type === 'terminal' || tab.dataset.type === 'help' || tab.dataset.type === 'versions' || tab.dataset.type === 'document') continue;
                     
                     const filename = target.textContent;
                     const iEl = tab.querySelector('i:not(.tab-close)');

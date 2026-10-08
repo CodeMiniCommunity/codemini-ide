@@ -325,9 +325,9 @@ window.renderStacks = function() {
       totalActiveKernelsCount++;
       let usageHtml = usage.map(u => `
         <div class="kernel-usage-row">
-        <span class="kernel-file-info" title="${u.name}">
+        <span class="kernel-file-info" title="${CodeMiniEscape.html(u.name)}">
         <i class="${u.icon}" style="color: ${u.color}; font-size: 13px; width: 16px; text-align: center;"></i>
-        <span class="kernel-file-text">${u.name}</span>
+        <span class="kernel-file-text">${CodeMiniEscape.html(u.name)}</span>
         </span>
         ${u.state}
         </div>
@@ -337,7 +337,7 @@ window.renderStacks = function() {
       <div style="margin-bottom: 8px;">
       <div class="kernel-card-header" style="display: flex; align-items: center; gap: 8px; padding: 7px 12px; background: var(--bg-white); border: 1px solid var(--border-color); border-radius: 4px 4px 0 0;">
       <i class="${k.icon}" style="color: ${k.activeColor}; font-size: 14px; width: 16px; text-align: center;"></i>
-      <span style="font-size: 12px; color: var(--text-main); font-weight: 600;">${k.name}</span>
+      <span style="font-size: 12px; color: var(--text-main); font-weight: 600;">${CodeMiniEscape.html(k.name)}</span>
       <span class="kernel-usage-count" style="margin-left: auto; font-size: 10px; background: var(--bg-panel); padding: 1px 6px; border-radius: 10px; color: var(--text-muted); border: 1px solid var(--border-color); font-weight: 500;">${usage.length} running</span>
       </div>
       <div class="kernel-card-body" style="background: var(--bg-white); border: 1px solid var(--border-color); border-top: none; border-radius: 0 0 4px 4px; overflow: hidden;">
@@ -349,7 +349,7 @@ window.renderStacks = function() {
       idleKernelsHtml += `
       <div class="kernel-idle-row" style="display: flex; align-items: center; gap: 8px; padding: 7px 12px; background: transparent; border-radius: 4px; margin-bottom: 4px; opacity: 0.55; border: 1px dashed var(--border-color); transition: opacity 0.2s;">
       <i class="${k.icon}" style="color: var(--icon-gray); font-size: 14px; width: 16px; text-align: center;"></i>
-      <span style="font-size: 12px; color: var(--text-muted); font-weight: 500;">${k.name}</span>
+      <span style="font-size: 12px; color: var(--text-muted); font-weight: 500;">${CodeMiniEscape.html(k.name)}</span>
       <span style="margin-left: auto; font-size: 10px; color: var(--text-muted); font-style: italic;">Idle</span>
       </div>
       `;
@@ -367,16 +367,16 @@ window.renderStacks = function() {
   const wsHtml = (window.workspacesList || []).map(ws => {
     const wsMeta = getFileIconAndColor(ws.name, true);
     return `
-    <div class="stack-item-row stack-filterable" data-name="${ws.name.toLowerCase()}" style="font-size: 12px; padding: 7px 10px; color: var(--text-main); display: flex; align-items: center; gap: 8px; cursor: default;">
+    <div class="stack-item-row stack-filterable" data-name="${CodeMiniEscape.html(ws.name.toLowerCase())}" style="font-size: 12px; padding: 7px 10px; color: var(--text-main); display: flex; align-items: center; gap: 8px; cursor: default;">
     <i class="${wsMeta.icon}" style="color: ${wsMeta.color}; font-size: 14px; width: 16px; text-align: center;"></i>
-    <span style="flex:1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500;">${ws.name}</span>
+    <span style="flex:1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500;">${CodeMiniEscape.html(ws.name)}</span>
     </div>
     `;
   }).join('');
 
   const tabsHtml = (window.openedTabs || []).map(t => {
     const fileMeta = getFileIconAndColor(t.name, false);
-    const isSystemTab = t.type === 'terminal' || t.type === 'settings' || t.type === 'workspace' || t.type === 'profile' || t.type === 'help';
+    const isSystemTab = t.type === 'terminal' || t.type === 'settings' || t.type === 'workspace' || t.type === 'profile' || t.type === 'help' || t.type === 'versions';
 
     let displayIcon = fileMeta.icon;
     let displayColor = fileMeta.color;
@@ -387,16 +387,16 @@ window.renderStacks = function() {
     }
 
     return `
-    <div class="stack-item-row stack-filterable" data-name="${t.name.toLowerCase()}" style="font-size: 12px; padding: 7px 10px; color: var(--text-main); display: flex; align-items: center; gap: 8px; cursor: pointer;" onclick="window.switchTabFromStack('${t.id}')">
+    <div class="stack-item-row stack-filterable" data-name="${CodeMiniEscape.html(t.name.toLowerCase())}" style="font-size: 12px; padding: 7px 10px; color: var(--text-main); display: flex; align-items: center; gap: 8px; cursor: pointer;" onclick="window.switchTabFromStack('${t.id}')">
     <i class="${displayIcon}" style="color: ${displayColor}; font-size: 14px; width: 16px; text-align: center;"></i>
-    <span style="flex:1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500;">${t.name}</span>
+    <span style="flex:1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500;">${CodeMiniEscape.html(t.name)}</span>
     </div>
     `;
   }).join('');
 
   const closedHtml = recentClosedItems.map(t => {
     const fileMeta = getFileIconAndColor(t.name, false);
-    const isSystemTab = t.type === 'terminal' || t.type === 'settings' || t.type === 'workspace' || t.type === 'profile' || t.type === 'help';
+    const isSystemTab = t.type === 'terminal' || t.type === 'settings' || t.type === 'workspace' || t.type === 'profile' || t.type === 'help' || t.type === 'versions';
 
     let displayIcon = fileMeta.icon;
     let displayColor = fileMeta.color;
@@ -407,9 +407,9 @@ window.renderStacks = function() {
     }
 
     return `
-    <div class="stack-item-row stack-filterable" data-name="${t.name.toLowerCase()}" style="font-size: 12px; padding: 7px 10px; color: var(--icon-gray); display: flex; align-items: center; gap: 8px; opacity: 0.8;">
+    <div class="stack-item-row stack-filterable" data-name="${CodeMiniEscape.html(t.name.toLowerCase())}" style="font-size: 12px; padding: 7px 10px; color: var(--icon-gray); display: flex; align-items: center; gap: 8px; opacity: 0.8;">
     <i class="${displayIcon}" style="color: ${displayColor}; font-size: 14px; width: 16px; text-align: center;"></i>
-    <span style="flex:1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${t.name}</span>
+    <span style="flex:1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${CodeMiniEscape.html(t.name)}</span>
     </div>
     `;
   }).join('');
@@ -436,11 +436,11 @@ window.renderStacks = function() {
       : `<span style="width: 14px; display: inline-block;"></span>`;
 
     const row = `
-    <div class="stack-item-row stack-filterable" data-name="${t.name.toLowerCase()}" style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; padding: 7px 10px 7px ${indent}px; color: var(--text-main);">
-    <div style="display: flex; align-items: center; gap: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;" title="${t.name}" ${isFolder && children.length > 0 ? `onclick="window.toggleTrashExpand('${t.id}', event)" role="button"` : ''}>
+    <div class="stack-item-row stack-filterable" data-name="${CodeMiniEscape.html(t.name.toLowerCase())}" style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; padding: 7px 10px 7px ${indent}px; color: var(--text-main);">
+    <div style="display: flex; align-items: center; gap: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;" title="${CodeMiniEscape.html(t.name)}" ${isFolder && children.length > 0 ? `onclick="window.toggleTrashExpand('${t.id}', event)" role="button"` : ''}>
     ${caret}
     <i class="${fileMeta.icon}" style="color: ${fileMeta.color}; font-size: 14px; width: 16px; text-align: center;"></i>
-    <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; font-weight: 500;">${t.name}</span>
+    <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; font-weight: 500;">${CodeMiniEscape.html(t.name)}</span>
     ${isFolder && children.length > 0 ? `<span class="stack-badge">${children.length}</span>` : ''}
     <span class="bin-timer-badge">${t._daysLeft}d left</span>
     </div>
@@ -472,7 +472,7 @@ window.renderStacks = function() {
   <div style="padding: 8px 15px 12px; border-bottom: 1px solid var(--border-color); background: var(--bg-white); position: sticky; top: 45px; z-index: 9;">
   <div class="stack-search-bar" style="display: flex; background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 4px; padding: 6px 10px; align-items: center; transition: border-color 0.2s, box-shadow 0.2s;">
   <i class="ri-search-line" style="color: var(--icon-gray); margin-right: 8px; font-size: 14px;"></i>
-  <input type="text" class="stack-filter-input" placeholder="Filter variables and items..." value="${st.filterQuery}" style="background: transparent; border: none; outline: none; width: 100%; color: var(--text-main); font-size: 12px; font-family: var(--font-main);" onkeyup="window.filterStacks(this.value)">
+  <input type="text" class="stack-filter-input" placeholder="Filter variables and items..." value="${CodeMiniEscape.html(st.filterQuery)}" style="background: transparent; border: none; outline: none; width: 100%; color: var(--text-main); font-size: 12px; font-family: var(--font-main);" onkeyup="window.filterStacks(this.value)">
   </div>
   </div>
 
